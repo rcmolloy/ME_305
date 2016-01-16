@@ -1,0 +1,89 @@
+ 0000           ;reading a sequence of digits from the keypad and store them in buffer
+ 0000           ;Contants
+ 000A           ENT_KEY =$000A
+ 0000           
+ 0000           ; RAM area
+                .area bss 
+                
+ 0000           COUNT::      .blkb 1
+ 0001           POINTER::    .blkb 2
+ 0003           BUFFER::     .blkb 6
+ 0009           RESULT::     .blkb 2
+ 000B           
+ 000B            
+ 000B           ;code area
+ 000B           ;==============================================================================
+                .area text
+                
+                ;Main Program
+                
+ 0000           _main::   
+ 0000 160000               jsr  INITKEY                       ;Library command to initialize the keypad
+ 0003 160000               jsr  FLUSH_BFR                     ;Library Command to flush the buffer
+ 0006 16000C               jsr  BUFFER_STR                    ;Storing numbers into buffer
+ 0009 160035               jsr  ASCII_BCD                     ;Convert ASCII to BCD
+ 000C           ;end main       
+ 000C           ;========================================================================
+ 000C           BUFFER_STR:
+ 000C 00                           bgnd
+ 000D 180B000000                   movb #$00, COUNT                ;Sets COUNT=6
+ 0012 180300000009                 movw #$00, RESULT               ;Sets RESULT=0
+ 0018 180300030001                 movw #BUFFER, POINTER           ;Stores BUFFER address into POINTER
+ 001E           	  LOOP:
+ 001E 160000                       jsr GETCHAR                     ;Wait for button on keypad has been pressed
+ 0021 00                           bgnd
+ 0022 C10A                         cmpb #ENT_KEY                   ;Check if enter key has been pressed
+ 0024 270E                     beq  RETURN                     ;If return key entered branch out
+ 0026 FE0001                   ldx  POINTER                    ;Load index register "X" with Pointer address
+ 0029 6B00                     stab 0,x                        ;Stores the contents of B into X
+ 002B 720000                   inc  COUNT                      ;Increment the digit count
+ 002E 08                       inx                             ;increment X
+ 002F 7E0001                   stx  POINTER                    ;Store X into pointer
+ 0032 20EA                     bra  LOOP                       ;Branch Back to loop
+ 0034                          
+ 0034                   
+ 0034           ;END BUFFER_STR
+ 0034           ;===========================================================================
+ 0034           RETURN:
+ 0034 3D              rts
+ 0035           ;END RETURN
+ 0035           ;============================================================================
+ 0035           ASCII_BCD:
+ 0035 180300030001                movw #BUFFER, POINTER
+ 003B 00                          bgnd
+ 003C               LOOP2:
+ 003C 00                          bgnd
+ 003D CD000A                      ldy #$000A                        ;Load index register Y with 10
+ 0040 FC0009                      ldd RESULT                        ;Load accumualtor D with Result
+ 0043 13                          EMUL                              ;Y*D = Y:D
+ 0044 8D0000                      CPY #$0000                        ;compare y to zero, to check for overflow
+ 0047 261C                        bne TOOBIG                        ;If too big, not a valid number
+ 0049 7C0009                      std RESULT                        ;Store contents of D in Result
+ 004C FE0001                      ldx POINTER                       ;Load index register X with Result
+ 004F E600                        ldab 0,x                          ;Loads Accumulator B with contents of X
+ 0051 C030                        subb #$30                         ;subtract 30 from the contents of B
+ 0053 87                          clra                              ;Clear accumulator A, clearing the first two bits in accumulator D
+ 0054 F30009                      addd RESULT                       ;Add the contents of D with the argment of Result and store back in D
+ 0057 7C0009                      std RESULT                        ;Store the contents of D into Result
+ 005A 730000                      dec COUNT                         ;Decrement the Digit Count
+ 005D 2708                        beq EXIT_CONV                     ;If Count=0, Get OUT!
+ 005F 08                          inx                             ;Increment X, incremting the BUFFER address to be read from POINTER
+ 0060 7E0001                      stx POINTER                       ;Store X back into pointer
+ 0063 26D7                        bne LOOP2                         ;Loop back
+ 0065                   
+ 0065                    
+ 0065           ;end ASCII_BCD 
+ 0065           
+ 0065           TOOBIG:
+ 0065 20FE                 bra TOOBIG      
+ 0067           ;end TOOBIG
+ 0067           
+ 0067           EXIT_CONV:
+ 0067 20FE                 bra EXIT_CONV   
+ 0069           ;end EXIT_CONV
+ 0069           
+ 0069           
+ 0069           
+                .area interrupt_vectors (abs)
+                .org    $FFFE             ; At reset vector location
+ FFFE 0000      .word   __start           ; Load starting address                                                                                               

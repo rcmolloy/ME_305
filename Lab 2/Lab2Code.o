@@ -1,0 +1,270 @@
+XH
+H 3 areas D global symbols
+M Lab2Code.s
+S __start Ref0000
+A text size 1CE flags 0
+dbfile Lab2Code.s
+dbfunc 0 ? 0 I
+dbline 26 0
+dbline 27 3
+dbline 28 6
+dbline 29 9
+dbline 2A C
+dbline 31 F
+dbline 32 15
+dbline 33 1B
+dbline 36 1C
+dbline 38 1F
+dbline 3A 22
+dbline 3C 25
+dbline 3E 28
+dbline 40 2B
+dbline 47 2D
+dbline 48 30
+dbline 49 32
+dbline 4A 33
+dbline 4B 35
+dbline 4C 36
+dbline 4D 38
+dbline 4E 39
+dbline 4F 3B
+dbline 50 3C
+dbline 51 3E
+dbline 52 3F
+dbline 53 41
+dbline 54 42
+dbline 55 44
+dbline 58 45
+dbline 59 49
+dbline 5A 4D
+dbline 5B 52
+dbline 5E 53
+dbline 5F 57
+dbline 60 5A
+dbline 61 5C
+dbline 63 61
+dbline 65 62
+dbline 66 66
+dbline 67 69
+dbline 68 6B
+dbline 6A 70
+dbline 6C 71
+dbline 6D 75
+dbline 6E 78
+dbline 6F 7A
+dbline 71 7F
+dbline 73 80
+dbline 74 84
+dbline 75 87
+dbline 76 89
+dbline 78 8E
+dbline 7A 8F
+dbline 7B 93
+dbline 7C 96
+dbline 7D 98
+dbline 7F 9D
+dbline 82 9E
+dbline 83 A2
+dbline 84 A5
+dbline 85 A7
+dbline 87 AC
+dbline 8F AD
+dbline 90 B0
+dbline 91 B2
+dbline 92 B3
+dbline 93 B5
+dbline 94 B6
+dbline 95 B8
+dbline 98 B9
+dbline 99 BC
+dbline 9A C1
+dbline 9C C2
+dbline 9D C8
+dbline 9E CB
+dbline 9F CC
+dbline A0 CF
+dbline A1 D2
+dbline A2 D7
+dbline A5 D8
+dbline A6 DB
+dbline A7 DD
+dbline A8 DE
+dbline A9 E1
+dbline AB E3
+dbline AC E8
+dbline AE ED
+dbline B6 EE
+dbline B7 F1
+dbline B8 F3
+dbline B9 F4
+dbline BA F6
+dbline BB F7
+dbline BC F9
+dbline BD FA
+dbline BE FC
+dbline BF FD
+dbline C0 FF
+dbline C1 100
+dbline C2 102
+dbline C3 103
+dbline C4 105
+dbline C7 106
+dbline C8 10A
+dbline C9 10E
+dbline CA 113
+dbline CD 114
+dbline CE 118
+dbline CF 11B
+dbline D0 11D
+dbline D2 122
+dbline D4 123
+dbline D5 127
+dbline D6 12A
+dbline D7 12C
+dbline D9 131
+dbline DB 132
+dbline DC 136
+dbline DD 139
+dbline DE 13B
+dbline E0 140
+dbline E2 141
+dbline E3 145
+dbline E4 148
+dbline E5 14A
+dbline E7 14F
+dbline E9 150
+dbline EA 154
+dbline EB 157
+dbline EC 159
+dbline EE 15E
+dbline F1 15F
+dbline F2 163
+dbline F3 166
+dbline F4 168
+dbline F6 16D
+dbline FE 16E
+dbline FF 171
+dbline 100 173
+dbline 101 174
+dbline 102 176
+dbline 103 177
+dbline 104 179
+dbline 107 17A
+dbline 108 17D
+dbline 109 182
+dbline 10B 183
+dbline 10C 189
+dbline 10D 18C
+dbline 10E 18D
+dbline 10F 190
+dbline 110 193
+dbline 111 198
+dbline 114 199
+dbline 115 19C
+dbline 116 19E
+dbline 117 19F
+dbline 118 1A2
+dbline 11A 1A4
+dbline 11B 1A9
+dbline 11D 1AE
+dbline 124 1AF
+dbline 125 1B2
+dbline 126 1B4
+dbline 127 1B5
+dbline 128 1B7
+dbline 12C 1B8
+dbline 12D 1BD
+dbline 130 1BE
+dbline 131 1C1
+dbline 13A 1C2
+dbline 13C 1C5
+dbline 13D 1C8
+dbline 13E 1CA
+dbline 13F 1CB
+dbline 141 1CD
+S _main Def0000
+A bss size F flags 0
+S TICKS_1 Def0000
+S TICKS_2 Def0005
+S COUNT_1 Def0002
+S COUNT_2 Def0007
+S DONE_1 Def0004
+S DONE_2 Def0009
+S t1state Def000A
+S t2state Def000B
+S t3state Def000C
+S t4state Def000D
+S t5state Def000E
+A interrupt_vectors size 10000 flags C
+T 00 00 79 00 0A 79 00 0B 79 00 0C 79
+R 00 00 00 00 00 03 00 01 00 06 00 01 00 09 00 01
+T 00 0A 00 0D 79 00 0E 18 03 00 C8 00 00 18 03
+R 00 00 00 00 00 02 00 01 00 05 00 01 00 0B 00 01
+T 00 17 01 F4 00 05 00 16 00 2D 16 00 AD 16
+R 00 00 00 00 00 04 00 01 00 08 00 00 00 0B 00 00
+T 00 23 00 EE 16 01 6E 16 01 AF 20 EF B6
+R 00 00 00 00 00 02 00 00 00 05 00 00 00 08 00 00
+T 00 2E 00 0A 27 13 43 27 1E 43 27 2A 43 27 36 43
+R 00 00 00 00 00 02 00 01
+T 00 3C 27 42 43 27 4E 43 27 5A 3D 1D 00 D6 03 1C
+R 00 00 00 00
+T 00 4A 00 D7 03 18 0B 01 00 0A 3D 1C 00 D6 02 F7
+R 00 00 00 00 00 08 00 01
+T 00 58 00 04 27 05 18 0B 02 00 0A 3D 1D 00 D6 02
+R 00 00 00 00 00 02 00 01 00 09 00 01
+T 00 66 F7 00 04 27 05 18 0B 03 00 0A 3D 1C 00 D6
+R 00 00 00 00 00 03 00 01 00 0A 00 01
+T 00 74 01 F7 00 04 27 05 18 0B 04 00 0A 3D 1D
+R 00 00 00 00 00 04 00 01 00 0B 00 01
+T 00 81 00 D6 01 F7 00 04 27 05 18 0B 05 00 0A 3D
+R 00 00 00 00 00 06 00 01 00 0D 00 01
+T 00 8F 1C 00 D6 03 F7 00 04 27 05 18 0B 06 00 0A
+R 00 00 00 00 00 07 00 01 00 0E 00 01
+T 00 9D 3D 1D 00 D6 03 F7 00 04 27 05 18 0B 01
+R 00 00 00 00 00 08 00 01
+T 00 AA 00 0A 3D B6 00 0B 27 07 43 27 0D 43 27 20
+R 00 00 00 00 00 02 00 01 00 06 00 01
+T 00 B8 3D 79 00 04 18 0B 01 00 0B 3D 18 04 00 00
+R 00 00 00 00 00 04 00 01 00 09 00 01 00 0E 00 01
+T 00 C6 00 02 FE 00 02 09 7E 00 02 79
+R 00 00 00 00 00 02 00 01 00 05 00 01 00 09 00 01
+T 00 D0 00 04 18 0B 02 00 0B 3D FE 00 02 27 06 09
+R 00 00 00 00 00 02 00 01 00 07 00 01 00 0B 00 01
+T 00 DE 7E 00 02 26 0A 18 0B 01 00 04 18 0B 01
+R 00 00 00 00 00 03 00 01 00 0A 00 01
+T 00 EB 00 0B 3D B6 00 0D 27 13 43 27 1E 43 27 2A
+R 00 00 00 00 00 02 00 01 00 06 00 01
+T 00 F9 43 27 36 43 27 42 43 27 4E 43 27 5A 3D 1D
+R 00 00 00 00
+T 01 07 00 D6 0C 1C 00 D7 0C 18 0B 01 00 0D 3D 1C
+R 00 00 00 00 00 0C 00 01
+T 01 15 00 D6 08 F7 00 09 27 05 18 0B 02 00 0D 3D
+R 00 00 00 00 00 06 00 01 00 0D 00 01
+T 01 23 1D 00 D6 08 F7 00 09 27 05 18 0B 03 00 0D
+R 00 00 00 00 00 07 00 01 00 0E 00 01
+T 01 31 3D 1C 00 D6 04 F7 00 09 27 05 18 0B 04
+R 00 00 00 00 00 08 00 01
+T 01 3E 00 0D 3D 1D 00 D6 04 F7 00 09 27 05 18 0B
+R 00 00 00 00 00 02 00 01 00 0A 00 01
+T 01 4C 05 00 0D 3D 1C 00 D6 0C F7 00 09 27 05 18
+R 00 00 00 00 00 03 00 01 00 0B 00 01
+T 01 5A 0B 06 00 0D 3D 1D 00 D6 0C F7 00 09 27 05
+R 00 00 00 00 00 04 00 01 00 0C 00 01
+T 01 68 18 0B 01 00 0D 3D B6 00 0E 27 07 43 27 0D
+R 00 00 00 00 00 05 00 01 00 09 00 01
+T 01 76 43 27 20 3D 79 00 09 18 0B 01 00 0E 3D 18
+R 00 00 00 00 00 07 00 01 00 0C 00 01
+T 01 84 04 00 05 00 07 FE 00 07 09 7E
+R 00 00 00 00 00 03 00 01 00 05 00 01 00 08 00 01
+T 01 8E 00 07 79 00 09 18 0B 02 00 0E 3D FE
+R 00 00 00 00 00 02 00 01 00 05 00 01 00 0A 00 01
+T 01 9A 00 07 27 06 09 7E 00 07 26 0A 18 0B 01
+R 00 00 00 00 00 02 00 01 00 08 00 01
+T 01 A7 00 09 18 0B 01 00 0E 3D B6 00 0C 27 04 43
+R 00 00 00 00 00 02 00 01 00 07 00 01 00 0B 00 01
+T 01 B5 27 07 3D 18 0B 01 00 0C 3D 16 01 C2 3D CD
+R 00 00 00 00 00 08 00 01 00 0C 00 00
+T 01 C3 02 62 8D 00 00 27 03 03 20 F8 3D
+R 00 00 00 00
+T FF FE 00 00
+R 00 00 00 02 02 02 00 00

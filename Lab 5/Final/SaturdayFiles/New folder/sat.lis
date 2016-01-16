@@ -1,0 +1,1972 @@
+ 0000           ; Robert Cory Molloy & Oscar Andrade
+ 0000           ; ME 305 - 02 :: Intro to Mechatronics
+ 0000           ; Labratory 5 :: Motor Controller 
+ 0000           
+ 0000           ;==================== Assembler Equates ====================
+ 0000           
+ 0280           ENCODER		       		= $0280				; Encoder Address 
+ 0028           PORTJ              		= $0028             ; Port J Address
+ 0029           DDRJ	   		   		= $0029             ; Make Port J an Output Address
+ 0010           pin5           	   		= 0b00010000        ; Pin 5 of Port J
+ 0080           TIOS               		= $0080             ; Timer Output Compare Address
+ 008E           TFLG1              		= $008E             ; Timer Flag Register Address
+ 0086           TSCR               		= $0086             ; Timer System Control Register Address
+ 0090           TC0H               		= $0090             ; Timer Channel Zero High Address
+ 0084           TCNT               		= $0084             ; Timer Count Register High and Low Address
+ 008C           TMSK1              		= $008C             ; Timer Mask Address
+ 0089           TCTL2              		= $0089             ; Timer Control Register Address
+ 0BB2           VREF_BUF		   		= $BB2			    ; Buffer Address for Reference Velocity
+ 0BB6           VACT_BUF		   		= $BB6			    ; Buffer Address for Actual Velocity
+ 0BBA           ERROR_BUF		   		= $BBA			    ; Buffer Address for Calculated Error
+ 0BBE           EFFORT_BUF		   		= $BBE				; Buffer Address for Calculated Effort
+ 0BC2           KI_BUF		   	   		= $BC2              ; Buffer Address for Integral Constant
+ 0BC7           KP_BUF		   	   		= $BC7			 	; Buffer Address for Proportional Constant
+ 0000           
+ 0000           ;==================== RAM area ====================
+                .area bss
+                
+                ; Task Variables
+                
+ 0000           mmState::                               .blkb 1                         ; Master Mind State Variable
+ 0001           kpdState::                              .blkb 1                         ; Key Pad Driver State Variable
+ 0002           displayState::                  .blkb 1                         ; Display State Variable
+ 0003           backspaceState::                .blkb 1                         ; Backspace State Variable
+ 0004           stateVariableState::    .blkb 1                         ; State Variable State Variable
+ 0005           tc0State::                              .blkb 1                         ; Timer Channel Zero State Variable
+ 0006           
+ 0006           ; ISR Variables
+ 0006           
+ 0006           V_Ref::                 .blkb 2                         ; Voltage Reference Inputted By User [BDI/BTI]
+ 0008           V_Act::                 .blkb 2                 ; Actual Voltage at Encoder
+ 000A           Error::                         .blkb 2                         ; V_Ref - V_act
+ 000C           E_Sum::                 .blkb 2                 ; Integral Error Sum
+ 000E           KiplusKp::              .blkb 2                 ; (Kp*Error)+(Ki/s*Esum)
+ 0010           A_Prime::               .blkb 2                 ; [A +/- 2458]
+ 0012           A_Star::                .blkb 2                 ; Dac Value 
+ 0014           Ki::                    .blkb 2                 ; Integral Control
+ 0016           oldKi::                                 .blkb 2                         ; Old Integral Control
+ 0018           Kp::                    .blkb 2                 ; Proportional Control
+ 001A           Kpdivs::                .blkb 2                 ; Kp*Error, After edivs Command
+ 001C           Kidivs::                .blkb 2                 ; Ki*Esum, After edivs Command
+ 001E           Dac_Value::             .blkb 2                         ; Voltage Value to be Fed to DAC
+ 0020           Theta_New::             .blkb 2                 ; New Displacment Interval Read from Encoder
+ 0022           Theta_Old::             .blkb 2                 ; Previous Displacement Interval Read from Encoder
+ 0024           Effort::                                .blkb 2                 ; Value for Calculated Effort  
+ 0026           slopeTimesDacValue::    .blkb 2                         ;
+ 0028           bConstant::                             .blkb 2                         ;
+ 002A           DAC_PLUS_FIVE::         .blkb 2 
+ 002C           SS_ERROR::              .blkb 2
+ 002E           
+ 002E           ;==================== Storing Variables ====================
+ 002E           
+ 002E           keyStore::                              .blkb 1                         ; Stores Most Recent Digit Pressed
+ 002F           buffer::                                .blkb 6                         ; Stores All Digits for Processing to Value
+ 0035           result::                                .blkb 2                         ; Stores Converted ASCII Numbers Before Push to Value
+ 0037           updateBuffer::                  .blkb 5                         ; Stores BCD Converted Value to Convert to ASCII Values
+ 003C           updateResult::                  .blkb 2                         ; Stores Converted BCD to ASCII Values for Template Buffers
+ 003E           stateVariable::                 .blkb 1
+ 003F           Dac_ValueMinusSixVolts::.blkb 2
+ 0041           Dac_ValueTimesHundred:: .blkb 2
+ 0043           
+ 0043           ;==================== Counter Variables ====================
+ 0043           
+ 0043           digitCounter::                  .blkb 1                         ; Counts Up Current Digits Input into Buffer
+ 0044           updateCounter::                 .blkb 1                         ; Counts Up to See if All BCD to ASCII Values Are Done 
+ 0045           LCDUpdateCounter::              .blkb 1                         ; Counts Down From 256 to 0 Interrupts to Update the Template
+ 0046           
+ 0046           ;==================== Flag Variables ====================
+ 0046           
+ 0046           keyFlag::                               .blkb 1                         ; Notifies Program a Key Has Been Pressed
+ 0047           echoFlag::                              .blkb 1                         ; Notifies Program that a Key Needs to Be Echoed
+ 0048           enterFlag::                             .blkb 1                         ; Notifies Program that Enter Procedure is Done
+ 0049           firstChar::                             .blkb 1                         ; Notifies Program the First Character is Ready
+ 004A           backspaceFlag::                 .blkb 1                         ; Notifies Program that a Entered Digit Needs to Be Cleared
+ 004B           digitFlag::                             .blkb 1                         ;
+ 004C           charFlag::                              .blkb 1                         ;
+ 004D           
+ 004D           RUN::                           .blkb 1                         ; Notifies The Program That The DAC Can Recieve Voltage
+ 004E           loopSetFlag::                   .blkb 1                         ; Nofities The Program That The Loop is Open or Closed
+ 004F           stateVariableFlag::             .blkb 1                         ; Notifies The Program That That The State Variables Need to Be Updated
+ 0050           autoManualFlag::                .blkb 1                         ; Notifies The Program Whether the Template Updates Automatically Or Manually
+ 0051           LCDUpdateFlag::                 .blkb 1                         ; Notifies The Program to Update the LCD Template
+ 0052           
+ 0052           VRefFlag::                              .blkb 1                         ; Notifies The Program The VRef (C Key) Was Pressed
+ 0053           VActFlag::                              .blkb 1                         ; Notifies The Program The VAct is Ready to Be Updated
+ 0054           effortFlag::                    .blkb 1                         ; Notifies The Program The Effort is Ready to Be Updated
+ 0055           errorFlag::                     .blkb 1                         ; Notifies The Program The Error is Ready to Be Updated
+ 0056           KiFlag::                        .blkb 1                         ; Notifies The Program That KI is Ready to Be Updated
+ 0057           KpFlag::                        .blkb 1                         ; Notifies The Program That KP is Ready to Be Updated
+ 0058           
+ 0058           AFlag::                                 .blkb 1                         ; Notifies The Program That A Has Been Pressed
+ 0059           BFlag::                                 .blkb 1                         ; Notifies The Program That B Has Been Pressed
+ 005A           CFlag::                                 .blkb 1                         ; Notifies The Program That C Has Been Pressed
+ 005B           DFlag::                                 .blkb 1                         ; Notifies The Program That D Has Been Pressed
+ 005C           EFlag::                                 .blkb 1                         ; Notifies The Program That E Has Been Pressed
+ 005D           FFlag::                                 .blkb 1                         ; Notifies The Program That F Has Been Pressed
+ 005E           firstKiFlag::                   .blkb 1
+ 005F           
+ 005F           
+ 005F           onPrintFlag::                   .blkb 1                         ; Notifies The Program That the R State Var. Should Be Printed
+ 0060           offPrintFlag::                  .blkb 1                         ; Notifies The Program That the S State Var. Should Be Printed
+ 0061           openLoopPrintFlag::             .blkb 1                         ; Notifies The Program That the OL State Var. Should Be Printed
+ 0062           closedLoopPrintFlag::   .blkb 1                         ; Notifies The Program That the CL State Var. Should Be Printed
+ 0063           autoPrintFlag::                 .blkb 1                         ; Notifies The Program That the A State Var. Should Be Printed
+ 0064           manualPrintFlag::               .blkb 1                         ; Notifies The Program That the M State Var. Should Be Printed
+ 0065           VRefNegPrintFlag::              .blkb 1                         ; Notifies The Program That the '+' Should Be Printed
+ 0066           VRefPosPrintFlag::              .blkb 1                         ; Notifies The Program That the '-' Should Be Printed
+ 0067           backspacePrint::                .blkb 1                         ; Notifies The Program That a Backspace Should Be Printed
+ 0068           
+ 0068           VRefPromptFlag::                .blkb 1                         ; Notifies The Program to Print the VRef Prompt
+ 0069           KiPromptFlag::                  .blkb 1                         ; Notifies The Program to Print the Ki Prompt
+ 006A           KpPromptFlag::                  .blkb 1                         ; Notifies The Program to Print the Kp Prompt
+ 006B           
+ 006B           digitAllowed::                  .blkb 1                         ; Notifies The Program That A Digit is or is not Allowed to Be Entered
+ 006C           VRefSignFlag::                  .blkb 1                         ; Notifies The Program That A '+' or '-' Has Been Entered 
+ 006D           
+ 006D           updateValuesFlag::              .blkb 1                         ; Notifies The Program to Update the Template Values
+ 006E           updateLine1Flag::               .blkb 1                         ; Notifies The Program to Update Line 1 in the Template
+ 006F           updateLine2Flag::               .blkb 1                         ; Notifies The Program to Update Line 2 in the Template
+ 0070           
+ 0070           promptUpFlag::                  .blkb 1                         ; Notifies The Program That a Prompt Has Been Printed
+ 0071           
+ 0071           ; Sign Variables
+ 0071           
+ 0071           VRefSign::                              .blkb 1                         ; Notifies The Program If VRef is '+' or '-'
+ 0072           VActSign::                              .blkb 1                         ; Notifies The Program If VAct is '+' or '-'
+ 0073           effortSign::                    .blkb 1                         ; Notifies The Program If Effort is '+' or '-'
+ 0074           errorSign::                             .blkb 1                         ; Notifies The Program If Error is '+' or '-'
+ 0075           
+ 0075           ; Other Variables
+ 0075           
+ 0075           pointer::                       .blkb 2                         ; Holds the Next Address of buffer
+ 0077           updatePointer::                 .blkb 2                         ; Holds the Next Address of updateBuffer        
+ 0079           displayPointer::                .blkb 2                 ; Holds the Next ASCII Value to Be Printed
+ 007B           
+ 007B           ;==================== Flash ====================
+ 007B           
+                .area text
+                
+                ;==================================  Main Program  =============================
+                
+ 0000           _main::
+ 0000            
+ 0000 160012            jsr     INIT                    ; Initialization
+ 0003            
+ 0003           TOP: 
+ 0003 00        bgnd
+ 0004 16001F            jsr     MASTERMIND                      ; Mastermind Sub-Routines
+ 0007            
+ 0007 160876            jsr     KPD                                     ; Key Pad Driver Sub-Routines
+ 000A            
+ 000A 1608AE            jsr     DISPLAY                 ; Display Sub-Routines
+ 000D            
+ 000D 160C99            jsr             TIMER_C0                ; Timer Channel Zero Sub-Routines
+ 0010           
+ 0010 20F1              bra             TOP
+ 0012                   
+ 0012           ;================================  Initialization  =============================        
+ 0012                   
+ 0012           INIT:
+ 0012           
+ 0012 790000            clr             mmState                         ; Initialize All Sub-Routine State Variables to State 0
+ 0015 790001            clr             kpdState            ; Clear Keypad Driver States Variable
+ 0018 790002            clr             displayState        ; Clear Displaysate State Variable
+ 001B 790003            clr             backspaceState      ; Clear Backspace State Variable
+ 001E 3D                rts     
+ 001F                   
+ 001F           ;========================== Mastermind Sub-Routine =============================
+ 001F           
+ 001F           MASTERMIND:
+ 001F           
+ 001F B60000            ldaa    mmState                         ; Grabbing the current state of Mastermind & Branching
+ 0022 18270024          lbeq    mmstate0                        ; Initialization of Mastermind & Buffer 
+ 0026 43                deca
+ 0027 1827005C          lbeq    mmstate1                        ; Splash Screen and Setting Displays Flags
+ 002B 43                deca
+ 002C 18270094          lbeq    mmstate2                        ; Mastermind Hub
+ 0030 43                deca
+ 0031 182701E0          lbeq    mmstate3                        ; Backspace State
+ 0035 43                deca
+ 0036 18270208          lbeq    mmstate4                        ; Enter State
+ 003A 43                deca
+ 003B 1827032C          lbeq    mmstate5                        ; Digit State
+ 003F 43                deca
+ 0040 18270362          lbeq    mmstate6                        ; Character State
+ 0044 43                deca    
+ 0045 182704DC          lbeq    mmstate7                        ; Update Values State
+ 0049 3D                rts                                                     ; Return to Main 
+ 004A           
+ 004A           ;=========== Mastermind State 0 - Initialization of Mastermind & Buffer ========
+ 004A           
+ 004A           mmstate0:	
+ 004A           	
+ 004A 1607F9            jsr             CLEAR_TEMPLATE                                          ; Clear the LCD Template Buffers
+ 004D 79002F            clr             buffer                                                  ; Clear the buffer Variable
+ 0050 790037            clr             updateBuffer                                            ; Clear the updateBuffer Variable                               
+ 0053 1803002F0075      movw    #buffer, pointer                                        ; Stores the First Address of buffer into pointer
+ 0059 180300370077      movw    #updateBuffer, updatePointer            ; Stores the First Address of updateBuffer into updatePointer
+ 005F 180B00004D        movb    #$00, RUN                                       ; Motor stop at Intialization
+ 0064 180300190006     movw     #$0019, V_Ref                                   ; Set Initial V_Ref value $19=25
+ 006A 180304000014     movw     #$0400, Ki                                      ; Set Initial Ki value $400=1024=1024(1)
+ 0070 180304000016      movw    #$0400, oldKi                                           ; Set Initial Ki value $400=1024=1024(1)
+ 0076 180314000018     movw     #$1400, Kp                                      ; Set Initial Kp value $1400=5120=1024(5)
+ 007C 180B010050        movb    #$01, autoManualFlag                            ; Set the AutoManualFlag to Auto
+ 0081 180B010000        movb    #$01, mmState                                           ; Set the Mastermind State Variable to 1    
+ 0086 3D                rts                                                                                     ; Return to Main
+ 0087           
+ 0087           ;====  Mastermind State 1 - Splash Screen and Setting Displays Flags & Counters  =========
+ 0087           
+ 0087           mmstate1:
+ 0087           
+ 0087 180B010049        movb   #$01, firstChar                                  ; Set firstChar to 1 (True) 
+ 008C 180B010052     movb   #$01, VRefFlag                                              ; Set VRefFlag to 1 (True) 
+ 0091 180B010056        movb   #$01, KiFlag                                             ; Set KiFlag to 1 (True) 
+ 0096 180B010057        movb   #$01, KpFlag                                             ; Set KpFlag to 1 (True) 
+ 009B 180B010053        movb   #$01, VActFlag                                           ; Set VActFlag to 1 (True) 
+ 00A0 180B010055        movb   #$01, errorFlag                                          ; Set errorFlag to 1 (True) 
+ 00A5 180B010054        movb   #$01, effortFlag                                         ; Set VRefFlag to 1 (True) 
+ 00AA 180B010060        movb   #$01, offPrintFlag                                       ; Set offPrintFlag to 1 (True) 
+ 00AF 180B010062        movb   #$01, closedLoopPrintFlag                        ; Set closedLoopPrintFlag to 1 (True) 
+ 00B4 180B010063        movb   #$01, autoPrintFlag                                      ; Set autoPrintFlag to 1 (True) 
+ 00B9 180B01006D        movb   #$01, updateValuesFlag                           ; Set updateValuesFlag to 1 (True) 
+ 00BE 180B020000        movb   #$02, mmState                                            ; Set the Mastermind State Variable to 2 (Hub)
+ 00C3 3D                rts                                                                             ; Return to Main
+ 00C4           
+ 00C4           ;===============  Mastermind State 2 - Hub  ============================
+ 00C4           
+ 00C4           mmstate2:
+ 00C4           
+ 00C4 F70046            tst     keyFlag                      ; Test keyFlag
+ 00C7 18270043          lbeq    NO_KEY                       ; If keyFlag is False, Branch to NO_KEY
+ 00CB 790046            clr     keyFlag                      ; Clear keyFlag
+ 00CE C1F1              cmpb    #$F1                         ; Compare Acc. B to Hex Value of 'F1'
+ 00D0 18270063          lbeq    F1_TRUE                      ; If B = '$F1', Branch to F1_TRUE
+ 00D4 C1F2              cmpb    #$F2                         ; Compare Acc. B to Hex Value of 'F2'
+ 00D6 18270087          lbeq    F2_TRUE                      ; If B = '$F2', Branch to F2_TRUE
+ 00DA C108              cmpb    #$08                         ; Compare Acc. B to Hex Value of '08'
+ 00DC 182700AB          lbeq    BS_TRUE                      ; If B = '$08', Branch to BS_TRUE
+ 00E0 C141              cmpb    #$41                         ; Compare Acc. B to Hex Value of 'F1'
+ 00E2 182700B7          lbeq    A_TRUE                                           ; If B = '$41', Branch to ENT_TRUE
+ 00E6 C142              cmpb    #$42                         ; Compare Acc. B to Hex Value of 'F1'
+ 00E8 182700BC          lbeq    B_TRUE                                           ; If B = '$41', Branch to ENT_TRUE
+ 00EC C143              cmpb    #$43                         ; Compare Acc. B to Hex Value of 'F1'
+ 00EE 182700C1          lbeq    C_TRUE                                           ; If B = '$41', Branch to ENT_TRUE
+ 00F2 C144              cmpb    #$44                         ; Compare Acc. B to Hex Value of 'F1'
+ 00F4 182700CB          lbeq    D_TRUE                                           ; If B = '$41', Branch to ENT_TRUE
+ 00F8 C145              cmpb    #$45                         ; Compare Acc. B to Hex Value of 'F1'
+ 00FA 182700D5          lbeq    E_TRUE                                           ; If B = '$41', Branch to ENT_TRUE
+ 00FE C146              cmpb    #$46                         ; Compare Acc. B to Hex Value of 'F1'
+ 0100 182700DF          lbeq    F_TRUE                                           ; If B = '$41', Branch to ENT_TRUE
+ 0104 C10A              cmpb    #$0A                         ; Compare Acc. B to Hex Value of '0A'
+ 0106 18270087          lbeq    ENT_TRUE                     ; If B = '$0A', Branch to ENT_TRUE
+ 010A 18200089          lbra    DIGIT_TRUE                   ; Otherwise Branch to DIGIT_TRUE
+ 010E           
+ 010E           NO_KEY:
+ 010E           
+ 010E F7004A            tst             backspaceFlag                ; Test backspaceFlag
+ 0111 182600D9          lbne    BACKSPACE_GO                 ; If backspaceFlag Not 0 (False), Branch to BACKSPACE_GO
+ 0115 F70048            tst             enterFlag                    ; Test enterFlag
+ 0118 182600D8          lbne    ENTER_GO                     ; If enterFlag Not 0 (False), Branch to ENTER_GO
+ 011C F7004B            tst             digitFlag                    ; Test digitFlag
+ 011F 182600D7          lbne    DIGIT_GO                     ; If digitFlag Not 0 (False), Branch to DIGIT_GO
+ 0123 F7004C            tst             charFlag                     ; Test charFlag
+ 0126 182600D9          lbne    CHAR_GO                      ; If charFlag Not 0 (False), Branch to CHAR_GO
+ 012A F7006D            tst             updateValuesFlag                         ; Test updateValuesFlag
+ 012D 182600DB          lbne    UPDATE_VALUES_GO                         ; If updateValuesFlag Not $00, Branch to UPDATE_VALUES_GO
+ 0131 180B020000        movb    #$02, mmState                ; If No Key was Pressed, Return to Hub
+ 0136 3D                rts                                                                      ; Return to Main
+ 0137                   
+ 0137           F1_TRUE:
+ 0137           
+ 0137 F70070        tst         promptUpFlag
+ 013A 271F              beq             F1_DONE
+ 013C F7006C            tst             VRefSignFlag                             ; Test VRefSignFlag
+ 013F 261A              bne             F1_DONE                                          ; If VRefSignFlag is 0 (False), Branch to F1_DONE
+ 0141 F70043            tst             digitCounter                             ; Test digitCounter
+ 0144 2615              bne             F1_DONE                                          ; If digitCounter is 0 (False), Branch to F1_DONE
+ 0146 180B010066        movb    #$01, VRefPosPrintFlag           ; Set VRefPosPrintFlag to 1 (True)
+ 014B 180B000071        movb    #$00, VRefSign                           ; Set VRefSign to 0 (False)
+ 0150 180B010047        movb    #$01, echoFlag                           ; Set echoFlag to 1 (True)
+ 0155 180B020000        movb    #$02, mmState                ; Set the Mastermind State Variable to 2 (Hub)
+ 015A 3D                rts                                                                      ; Return to Main
+ 015B           
+ 015B           F1_DONE:
+ 015B           	
+ 015B 180B020000        movb    #$02, mmState                ; Set the Mastermind State Variable to 2 (Hub)
+ 0160 3D                rts                                                                      ; Return to Main
+ 0161                           
+ 0161           F2_TRUE:
+ 0161           
+ 0161 F70070        tst         promptUpFlag
+ 0164 271F              beq             F2_DONE
+ 0166 F7006C            tst             VRefSignFlag                             ; Test VRefSignFlag
+ 0169 261A              bne             F2_DONE                                          ; If VRefSignFlag is 0 (False), Branch to F2_DONE
+ 016B F70043            tst             digitCounter                             ; Test digitCounter
+ 016E 2615              bne             F2_DONE                                          ; If digitCounter is 0 (False), Branch to F2_DONE
+ 0170 180B010065        movb    #$01, VRefNegPrintFlag           ; Set VRefPosPrintFlag to 1 (True)
+ 0175 180B010071        movb    #$01, VRefSign                           ; Set VRefSign to 0 (False)
+ 017A 180B010047        movb    #$01, echoFlag                           ; Set echoFlag to 1 (True)
+ 017F 180B020000        movb    #$02, mmState                ; Set the Mastermind State Variable to 2 (Hub) 
+ 0184 3D                rts                                                                      ; Return to Main
+ 0185           
+ 0185           F2_DONE:
+ 0185           	
+ 0185 180B020000        movb    #$02, mmState                ; Set the Mastermind State Variable to 2 (Hub) 
+ 018A 3D                rts                                                                      ; Return to Main
+ 018B           
+ 018B           BS_TRUE:
+ 018B           	
+ 018B 180B01004A        movb    #$01, backspaceFlag          ; Set backspaceFlag to 1 (True)
+ 0190 3D                rts                                                                      ; Return to Main
+ 0191                   
+ 0191           ENT_TRUE:
+ 0191           	
+ 0191 180B010048        movb    #$01, enterFlag              ; Set enterFlag to 1 (True)
+ 0196 3D                rts                                                                      ; Return to Main
+ 0197           
+ 0197           DIGIT_TRUE:
+ 0197           		   
+ 0197 180B01004B        movb    #$01, digitFlag              ; Set digitFlag to 1 (True)
+ 019C 3D                rts                                                                      ; Return to Main
+ 019D           
+ 019D           A_TRUE:
+ 019D           
+ 019D 180B01004C        movb    #$01, charFlag                           ; Set charFlag to 1 (True)
+ 01A2 180B010058        movb    #$01, AFlag                                      ; Set AFlag to 1 (True)
+ 01A7 3D                rts                                                                      ; Return to Main
+ 01A8                   
+ 01A8           B_TRUE:
+ 01A8           
+ 01A8 180B01004C        movb    #$01, charFlag                           ; Set charFlag to 1 (True)
+ 01AD 180B010059        movb    #$01, BFlag                                      ; Set BFlag to 1 (True)
+ 01B2 3D                rts                                                                      ; Return to Main
+ 01B3                   
+ 01B3           C_TRUE:
+ 01B3           
+ 01B3 180B01004C        movb    #$01, charFlag                           ; Set charFlag to 1 (True)
+ 01B8 180B01005A        movb    #$01, CFlag                                      ; Set CFlag to 1 (True)
+ 01BD 180B010070        movb    #$01, promptUpFlag                       ; Set promptUpFlag to 1 (True)
+ 01C2 3D                rts                                                                      ; Return to Main
+ 01C3                   
+ 01C3           D_TRUE:
+ 01C3           
+ 01C3 180B01004C        movb    #$01, charFlag                           ; Set charFlag to 1 (True)
+ 01C8 180B01005B        movb    #$01, DFlag                                      ; Set DFlag to 1 (True)
+ 01CD 180B010070        movb    #$01, promptUpFlag                       ; Set promptUpFlag to 1 (True)
+ 01D2 3D                rts                                                                      ; Return to Main
+ 01D3                   
+ 01D3           E_TRUE:
+ 01D3           
+ 01D3 180B01004C        movb    #$01, charFlag                           ; Set charFlag to 1 (True)
+ 01D8 180B01005C        movb    #$01, EFlag                                      ; Set EFlag to 1 (True)
+ 01DD 180B010070        movb    #$01, promptUpFlag                       ; Set promptUpFlag to 1 (True)
+ 01E2 3D                rts                                                                      ; Return to Main
+ 01E3           
+ 01E3           F_TRUE:
+ 01E3           
+ 01E3 180B01004C        movb    #$01, charFlag                           ; Set charFlag to 1 (True)
+ 01E8 180B01005D        movb    #$01, FFlag                                      ; Set EFlag to 1 (True)
+ 01ED 3D                rts                                                                      ; Return to Main
+ 01EE                   
+ 01EE                   
+ 01EE           BACKSPACE_GO:
+ 01EE           
+ 01EE 180B030000        movb    #$03, mmState                ; Set next Mastermind State (mmstate) to Backspace
+ 01F3 3D                rts                                                                      ; Return to Main
+ 01F4                   
+ 01F4           ENTER_GO:
+ 01F4           
+ 01F4 180B040000        movb    #$04, mmState                ; Set next Mastermind State (mmstate) to Enter
+ 01F9 3D                rts                                                                      ; Return to Main
+ 01FA                           
+ 01FA           DIGIT_GO:
+ 01FA           	
+ 01FA 79004B            clr     digitFlag                                        ; Clear the digitFlag
+ 01FD 180B050000        movb    #$05, mmState                ; Set next Mastermind State (mmstate) to Digit
+ 0202 3D                rts                                                                      ; Return to Main
+ 0203                   
+ 0203           CHAR_GO:
+ 0203           
+ 0203 79004C        clr         charFlag                                         ; Clear the charFlag
+ 0206 180B060000        movb    #$06, mmState                ; Set next Mastermind State (mmstate) to Character
+ 020B 3D                rts                                                                      ; Return to Main
+ 020C           
+ 020C           UPDATE_VALUES_GO:
+ 020C           
+ 020C 79006D        clr         updateValuesFlag                         ; Clear the updateValuesFlag
+ 020F 180B070000        movb    #$07, mmState                ; Set next Mastermind State (mmstate) to Update Values
+ 0214 3D                rts                                                                      ; Return to Main
+ 0215           
+ 0215                   
+ 0215           ;===================== Mastermind State 3 - Backspace State ====================
+ 0215           
+ 0215           mmstate3:
+ 0215           
+ 0215 F7006C            tst     VRefSignFlag                             ; Test the VRefSignFlag
+ 0218 260C              bne     BACKSPACE_SIGN                           ; If VRefSignFlag is 1 (True), Branch to BACKSPACE_SIGN
+ 021A F70043            tst     digitCounter                 ; Test digitCounter
+ 021D 2718              beq     BACKSPACE_DONE               ; If digitCounter is 0, Branch to BSPACE_DONE
+ 021F F7004A            tst     backspaceFlag                ; Test backspaceFlag
+ 0222 2713              beq     BACKSPACE_DONE               ; If backspaceFlag is 0 (False), Branch to BSPACE_DONE
+ 0224 200B              bra     BACKSPACE_SET                            ; Branch Always to BACKSPACE_SET
+ 0226           
+ 0226           BACKSPACE_SIGN:
+ 0226           
+ 0226 180B00006C     movb       #$00, VRefSignFlag                       ; Set VRefSignFlag to 0 (False)
+ 022B 180B010067     movb       #$01, backspacePrint             ; Set backspacePrint to 1 (True)
+ 0230 3D            rts                                                                  ; Return to Main
+ 0231           
+ 0231           BACKSPACE_SET:
+ 0231           
+ 0231 180B010067        movb    #$01, backspacePrint         ; Set backspacePrint to 1 (True)
+ 0236 3D                rts                                                                      ; Return to Main       
+ 0237                   
+ 0237           BACKSPACE_DONE:
+ 0237           
+ 0237 180B00004A        movb    #$00, backspaceFlag                      ; Set backspaceFlag to 1 (True)
+ 023C 180B020000        movb    #$02, mmState                ; Set the Mastermind State Variable to 2 (Hub)
+ 0241 3D                rts                                                                  ; Return to Main
+ 0242           
+ 0242           ;===================== Mastermind State 4 - Enter State ========================
+ 0242           
+ 0242           mmstate4:
+ 0242           
+ 0242 F70048            tst             enterFlag                                        ; Test the enterFlag
+ 0245 2604              bne             ENTER_INIT                                       ; If enterFlag is 1 (True), Branch to ENTER_INIT
+ 0247 182700DE          lbeq    ENTER_DONE                                       ; If enterFlag is 0 (False), Branch to ENTER_DONE
+ 024B                           
+ 024B           ENTER_INIT:
+ 024B           		
+ 024B F70043            tst     digitCounter                  ; Test digitCounter
+ 024E 18270056          lbeq    EMPTY_VALUE                   ; If digitCounter is 0 (False), Branch to EMPTY_VALUE
+ 0252 2000              bra     ASCII_BCD                     ; Otherwise Branch to ASCII_BCD
+ 0254           
+ 0254           ASCII_BCD:
+ 0254           
+ 0254 1803002F0075      movw    #buffer, pointer              ; Load First Address of buffer into pointer
+ 025A 180300000035      movw    #$0000, result                ; Clear the Value of result
+ 0260                           
+ 0260           	LOOP:
+ 0260           
+ 0260 CD000A                    ldy     #$0A                      ; Load Accumulator A with 10    
+ 0263 FC0035                    ldd     result                    ; Load Accumulator B with result    
+ 0266 13                        emul                              ; Multiply A and B, Store in A:B or D
+ 0267 8D0000                    cmpy    #$0000                    ; Compare Accumulator D with 0 
+ 026A 2634                      bne     TOO_BIG_VALUE             ; If a Carry Present in Y, Branch to TOO_BIG_VALUE
+ 026C 7C0035                    std     result                    ; Store Accumulator D into result    
+ 026F FE0075                    ldx     pointer                   ; Load X with buffer Address Stored In pointer    
+ 0272 E600                      ldab    0,x                       ; Load Accumulator B with the Contents in X  
+ 0274 C030                      subb    #$30                      ; Subtract 30 From Accumulator B  
+ 0276 87                        clra                              ; Clear Accumulator A 
+ 0277 F30035                    addd    result                    ; Add result To B and Store Back Into B
+ 027A 2924                      bvs     TOO_BIG_VALUE                 ; If greater than 32767 hex, Branch to TOO_BIG_VALUE  
+ 027C 7C0035                    std     result                    ; Store D in result 
+ 027F 730043                    dec     digitCounter              ; Decrement digitCounter
+ 0282 F70043                    tst             digitCounter              ; Test digitCounter         
+ 0285 2706                      beq     VALUE_PUSH_MAIN           ; If digitCounter is zero, Branch to VALUE_PUSH_MAIN        
+ 0287 08                        inx                               ; Increment Address in X
+ 0288 7E0075                    stx             pointer                   ; Store Address In X Into Pointer
+ 028B 20D3                      bra     LOOP                      ; Branch Back Into LOOP               
+ 028D                   
+ 028D           VALUE_PUSH_MAIN:
+ 028D           
+ 028D F70052        tst         VRefFlag                                          ; Test VRefFlag
+ 0290 262B              bne             VREF_STORE                                        ; If VRefFlag is 1 (True), Branch to VREF_STORE
+ 0292 F70056            tst             KiFlag                                            ; Test KiFlag
+ 0295 2648              bne             KI_STORE                                          ; If KiFlag is 1 (True), Branch to KI_STORE
+ 0297 F70057            tst             KpFlag                                            ; Test KpFlag
+ 029A 266B              bne     KP_STORE                                          ; If KpFlag is 1 (True), Branch to KP_STORE
+ 029C 18200089          lbra    ENTER_DONE                    ; Otherwise Branch To ENTER_DONE
+ 02A0                   
+ 02A0           TOO_BIG_VALUE:
+ 02A0           
+ 02A0 18037FFF0035      movw     #$7FFF, result                           ; Load $7FFF (32767) to result
+ 02A6 20E5              bra              VALUE_PUSH_MAIN                          ; Branch Always to VALUE_PUSH_MAIN
+ 02A8                           
+ 02A8           EMPTY_VALUE:
+ 02A8           	
+ 02A8 180300000035      movw    #$0000, result                ; Clear the Value of result
+ 02AE 1803002F0075      movw    #buffer, pointer              ; Move The First Address of buffer into Pointer
+ 02B4 790043            clr         digitCounter                  ; Clear the digitCounter
+ 02B7 180B000048        movb    #$00, enterFlag               ; Set enterFlag to 1 (True)
+ 02BC 3D                rts                                           ; Return to Main
+ 02BD           
+ 02BD           VREF_STORE:
+ 02BD           
+ 02BD F70071        tst    VRefSign                                               ; Test VRefSign
+ 02C0 260D              bne        VREF_NEG_STORE                 ; If VRefFlag is 1 (Negative), Branch to VREF_NEG_STORE
+ 02C2 180400350006      movw   result, V_Ref                              ; Move the Value of result into V_Ref
+ 02C8 180B010052        movb   #$01, VRefFlag                             ; Set VRefFlag to 1 (True)
+ 02CD 205A              bra        ENTER_DONE                                     ; Branch Always to ENTER_DONE
+ 02CF           
+ 02CF           VREF_NEG_STORE:
+ 02CF           
+ 02CF CC0000        ldd     #$0000                                ; Load D with $0000 (0)
+ 02D2 B30035        subd    result                                ; Subracting result from $0000 (0) to Return Neg Value
+ 02D5 7C0006            std     V_Ref                                             ; Storing D into V_Ref
+ 02D8 180B010052        movb    #$01, VRefFlag                            ; Set VRefFlag to 1 (True)
+ 02DD 204A              bra             ENTER_DONE                                        ; Branch Always to ENTER_DONE
+ 02DF                   
+ 02DF           KI_STORE: ; MIGHT BE REDUNDANT SO WE NEED TO TEST
+ 02DF           
+ 02DF CE7FFF        ldx     #$7FFF                                                ; Load X with $7FFF (32767)
+ 02E2 BE0035        cpx         result                                            ; Compare X with the Value of result
+ 02E5 2A0D          bpl     NO_KI_SATURATION                      ; If result is Less Than $7FFF (32767), Branch to NO_KI_SATURATION
+ 02E7 18037FFF0014      movw    #$7FFF, Ki                                        ; Storing $7FFF (32767) into Ki
+ 02ED 180B010056        movb    #$01, KiFlag                              ; Set KiFlag to 1 (True)       
+ 02F2 2035              bra             ENTER_DONE                                        ; Branch Always to ENTER_DONE
+ 02F4           
+ 02F4           NO_KI_SATURATION:
+ 02F4           
+ 02F4 180400350014      movw    result, Ki                                        ; Move the Value in result into Ki
+ 02FA 180400350016      movw    result, oldKi                             ; Move the Value in result into oldKi
+ 0300 180B010056        movb    #$01, KiFlag                              ; Set KiFlag to 1 (True)
+ 0305 2022              bra     ENTER_DONE                                        ; Branch Always to ENTER_DONE
+ 0307           
+ 0307           KP_STORE: ; MIGHT BE REDUNDANT SO WE NEED TO TEST
+ 0307               
+ 0307 CE7FFF        ldx     #$7FFF                                                ; Load X with $7FFF (32767)
+ 030A BE0035        cpx     result                                                ; Compare X with the Value of result
+ 030D 2A0D          bpl     NO_KP_SATURATION                      ; If result is Less Than $7FFF (32767), Branch to NO_KP_SATURATION
+ 030F 18037FFF0018      movw    #$7fff, Kp                                        ; Storing $7FFF (32767) into Kp
+ 0315 180B010057        movb    #$01, KpFlag                              ; Set KpFlag to 1 (True)
+ 031A 200D              bra             ENTER_DONE                                ; Branch Always to ENTER_DONE
+ 031C                   
+ 031C           NO_KP_SATURATION:
+ 031C           
+ 031C 180400350018      movw    result, Kp                                    ; Move the Value in result into Kp
+ 0322 180B010057        movb    #$01, KpFlag                              ; Set KpFlag to 1 (True)
+ 0327 2000          bra         ENTER_DONE                                        ; Branch Always to ENTER_DONE
+ 0329           
+ 0329           ENTER_DONE:
+ 0329           
+ 0329 180300000035      movw    #$0000, result                ; Clear the Value of result
+ 032F 790043            clr         digitCounter                  ; Clear the digitCounter
+ 0332 1803002F0075      movw    #buffer, pointer              ; Move the First Address of buffer into pointer
+ 0338 180B000048        movb    #$00, enterFlag               ; Set KpFlag to 1 (True)
+ 033D 180B00006B        movb    #$00, digitAllowed                        ; Set digitAllowed to 1 (True)
+ 0342 180B000070        movb    #$00, promptUpFlag                        ; Set promptUpFlag to 1 (True)                   
+ 0347 180B01006D        movb    #$01, updateValuesFlag            ; Set updateValuesFlag to 1 (True)    
+ 034C 180B01006F        movb    #$01, updateLine2Flag             ; Set KpFlag to 1 (True)
+ 0351 180B010051        movb    #$01, LCDUpdateFlag                       ; Set KpFlag to 1 (True)
+ 0356 180B01006D        movb    #$01, updateValuesFlag            ; Set KpFlag to 1 (True)
+ 035B 180B000070        movb    #$00, promptUpFlag                        ; Set KpFlag to 1 (True)
+ 0360 180B00006C        movb    #$00, VRefSignFlag                        ; Set KpFlag to 1 (True)
+ 0365 180B020000        movb    #$02, mmState                             ; Set the Mastermind State Variable to 2 (Hub)                                      
+ 036A 3D                rts 
+ 036B           
+ 036B           ;====================  Mastermind State 5 - Digit Entered   ====================
+ 036B           
+ 036B           mmstate5:
+ 036B           
+ 036B F7006B            tst             digitAllowed                              ; Test digitAllowed
+ 036E 18270029          lbeq    DIGIT_DONE                                        ; If digitAllowed is 0 (Not Allowed), Branch to DIGIT_DONE
+ 0372 F7004B            tst             digitFlag                                         ; Test digitFlag
+ 0375 261C              bne             DIGIT_WAIT                                        ; If digitAllowed is 1 (True), Branch to DIGIT_WAIT
+ 0377 C141              cmpb    #$41                                      ; Compare Hexadecimal Value In B to $41
+ 0379 18250002          lblo    DIGIT                                     ; If Value in B < $40, Branch to DIGIT
+ 037D 2009              bra             NOTDIGIT                                  ; Otherwise Value in B is not a Digit, Branch to NOTDIGIT
+ 037F             
+ 037F           DIGIT:
+ 037F           
+ 037F 180B01004B        movb    #$01, digitFlag                           ; Set KpFlag to 1 (True)
+ 0384 18200409          lbra    BUFFER_STORE                  ; Branch Always BUFFER_STORE
+ 0388           
+ 0388           NOTDIGIT:
+ 0388           
+ 0388 180B000046        movb    #$00, keyFlag                 ; Set KpFlag to 0 (False)
+ 038D 180B020000        movb    #$02, mmState                             ; Set the Mastermind State Variable to 2 (Hub)
+ 0392 3D                rts                                                                       ; Return to Main
+ 0393           
+ 0393           DIGIT_WAIT:
+ 0393           
+ 0393 F70047            tst     echoFlag                                          ; Set KpFlag to 0 (False)
+ 0396 18270001          lbeq    DIGIT_DONE                                    ; If echoFlag is 0 (False), Branch to DIGIT_DONE
+ 039A 3D                rts                                                                       ; Return to Main
+ 039B                   
+ 039B           DIGIT_DONE:
+ 039B           
+ 039B 180B00004B     movb       #$00, digitFlag                           ; Set digitFlag to 0 (False)
+ 03A0 180B020000        movb    #$02, mmState                 ; Set the Mastermind State Variable to 2 (Hub)
+ 03A5 3D                rts                                                               ; Return to Main
+ 03A6           
+ 03A6           ;===================== Mastermind State 6 - Character Entered ==================
+ 03A6           
+ 03A6           mmstate6:
+ 03A6           
+ 03A6 F70052        tst         VRefFlag                                          ; Test VRefFlag
+ 03A9 18260172          lbne    VALUE_CHAR_DONE                           ; If VRefFlag is 1 (True), Branch to VALUE_CHAR_DONE
+ 03AD F70056            tst     KiFlag                                            ; Test KiFlag
+ 03B0 1826016B          lbne    VALUE_CHAR_DONE                           ; If KiFlag is 1 (True), Branch to VALUE_CHAR_DONE
+ 03B4 F70057            tst     KpFlag                                            ; Test KpFlag
+ 03B7 18260164          lbne    VALUE_CHAR_DONE                           ; If KpFlag is 1 (True), Branch to VALUE_CHAR_DONE
+ 03BB F70058            tst     AFlag                                             ; Test AFlag
+ 03BE 18260029          lbne    AFLAG_GO                                          ; If AFlag is 1 (True), Branch to AFLAG_GO
+ 03C2 F70059            tst     BFlag                                             ; Test BFlag
+ 03C5 1826005D          lbne    BFLAG_GO                                          ; If BFlag is 1 (True), Branch to BFLAG_GO            
+ 03C9 F7005A            tst     CFlag                                             ; Test CFlag
+ 03CC 182600B2          lbne    CFLAG_GO                                          ; If CFlag is 1 (True), Branch to CFLAG_GO
+ 03D0 F7005B            tst     DFlag                                             ; Test DFlag
+ 03D3 182600BE          lbne    DFLAG_GO                                          ; If DFlag is 1 (True), Branch to DFLAG_GO
+ 03D7 F7005C            tst     EFlag                                             ; Test EFlag
+ 03DA 182600D9          lbne    EFLAG_GO                                      ; If EFlag is 1 (True), Branch to EFLAG_GO
+ 03DE F7005D            tst     FFlag                                             ; Test FFlag
+ 03E1 182600F4          lbne    FFLAG_GO                                          ; If FFlag is 1 (True), Branch to FFLAG_GO
+ 03E5 180B020000        movb    #$02, mmState                             ; Set the Mastermind State Variable to 2 (Hub)
+ 03EA 3D                rts                                                               ; Return to Main                              
+ 03EB                   
+ 03EB           AFLAG_GO:
+ 03EB           
+ 03EB F7004D        tst         RUN                                                       ; Test RUN
+ 03EE 18260004          lbne    MOTOR_OFF                                         ; If RUN is 1 (Off), Branch to MOTOR_OFF
+ 03F2 18200018          lbra    MOTOR_ON                                          ; Branch Always to MOTOR_ON
+ 03F6                   
+ 03F6           MOTOR_OFF:
+ 03F6           	
+ 03F6 180B00004D        movb    #$00, RUN                                         ; Set RUN to 0 (False)
+ 03FB 180B010060        movb    #$01, offPrintFlag                        ; Set offPrintFlag to 1 (True)
+ 0400 180B00005F        movb    #$00, onPrintFlag                         ; Set onPrintFlag to 0 (False)
+ 0405 180B000058        movb    #$00, AFlag                                       ; Set AFlag to 0 (False)
+ 040A 18200106          lbra    STATE_CHAR_DONE                           ; Branch Always to STATE_CHAR_DONE
+ 040E                   
+ 040E           MOTOR_ON:
+ 040E           	
+ 040E 180B01004D        movb    #$01, RUN                                         ; Set RUN to 1 (True)
+ 0413 180B000060        movb    #$00, offPrintFlag                        ; Set offPrintFlag to 0 (False)
+ 0418 180B01005F        movb    #$01, onPrintFlag                         ; Set onPrintFlag to 1 (True)
+ 041D 180B000058        movb    #$00, AFlag                                   ; Set AFlag to 0 (False)
+ 0422 182000EE          lbra    STATE_CHAR_DONE                           ; Branch Always to STATE_CHAR_DONE
+ 0426                   
+ 0426           BFLAG_GO:
+ 0426           
+ 0426 F7004E        tst         loopSetFlag                                       ; Test loopSetFlag
+ 0429 18270004          lbeq    OPEN_LOOP_SET                             ; If loopSetFlag is 0 (Next State - Open), Branch to OPEN_LOOP_SET 
+ 042D 1826002E          lbne    CLOSED_LOOP_SET                           ; If loopSetFlag is 1 (Next State - Closed), Branch to CLOSED_LOOP_SET
+ 0431                   
+ 0431           OPEN_LOOP_SET:
+ 0431           
+ 0431 180B000062        movb    #$00, closedLoopPrintFlag         ; Set closedLoopPrintFlag to 0 (False)
+ 0436 180B010061        movb    #$01, openLoopPrintFlag           ; Set openLoopPrintFlag to 1 (True)
+ 043B 180B01004E        movb    #$01, loopSetFlag                         ; Set loopSetFlag to 1 (Next State - Closed)
+ 0440 180B000059        movb    #$00, BFlag                                       ; Set BFlag to 0 (False)
+ 0445 180B01005E        movb    #$01, firstKiFlag
+ 044A 180400140016      movw    Ki, oldKi
+ 0450 180300000014      movw    #$0000, Ki
+ 0456 180B010056        movb    #$01, KiFlag
+ 045B 182000B5          lbra    STATE_CHAR_DONE                           ; Branch Always to STATE_CHAR_DONE
+ 045F                   
+ 045F           CLOSED_LOOP_SET:
+ 045F           
+ 045F 180B010062        movb    #$01, closedLoopPrintFlag         ; Set closedLoopPrintFlag to 1 (True)          
+ 0464 180B000061        movb    #$00, openLoopPrintFlag           ; Set openLoopPrintFlag to 0 (False)
+ 0469 180B00004E        movb    #$00, loopSetFlag                         ; Set loopSetFlag to 1 (Next State - Open)
+ 046E 180B000059        movb    #$00, BFlag                                       ; Set BFlag to 0 (False)
+ 0473 180400160014      movw    oldKi, Ki
+ 0479 180B010056        movb    #$01, KiFlag
+ 047E 18200092          lbra    STATE_CHAR_DONE                           ; Branch Always to STATE_CHAR_DONE            
+ 0482                           
+ 0482           CFLAG_GO:
+ 0482           
+ 0482 180B010052        movb    #$01, VRefFlag                            ; Set VRefFlag to 1 (True) 
+ 0487 180B010068        movb    #$01, VRefPromptFlag              ; Set VRefPromptFlag to 1 (True)
+ 048C 180B00005A        movb    #$00, CFlag                                       ; Set CFlag to 0 (False)
+ 0491 1820008A          lbra    VALUE_CHAR_DONE                           ; Branch Always to VALUE_CHAR_DONE    
+ 0495                           
+ 0495           DFLAG_GO:
+ 0495           	
+ 0495 180B00004D        movb    #$00, RUN                                         ; Set RUN to 0 (Stop) 
+ 049A 180B010060        movb    #$01, offPrintFlag                        ; Set offPrintValue to 1 (True)  
+ 049F 180B01004F        movb    #$01, stateVariableFlag           ; Set stateVariableFlag to 1 (True) 
+ 04A4 180B010056        movb    #$01, KiFlag                              ; Set KiFlag to 1 (True) 
+ 04A9 180B010069        movb    #$01, KiPromptFlag                        ; Set KiPromptFlag to 1 (True) 
+ 04AE 180B00005B        movb    #$00, DFlag                                       ; Set DFlag to 0 (False) 
+ 04B3 18200068          lbra    VALUE_CHAR_DONE                           ; Branch Always to VALUE_CHAR_DONE
+ 04B7           
+ 04B7           EFLAG_GO:
+ 04B7           
+ 04B7 180B00004D        movb    #$00, RUN                                         ; Set RUN to 0 (Stop)                                         
+ 04BC 180B010060        movb    #$01, offPrintFlag                        ; Set offPrintValue to 1 (True)
+ 04C1 180B01004F        movb    #$01, stateVariableFlag           ; Set stateVariableFlag to 1 (True)
+ 04C6 180B010057        movb    #$01, KpFlag                              ; Set KpFlag to 1 (True)
+ 04CB 180B01006A        movb    #$01, KpPromptFlag                        ; Set KpPromptFlag to 1 (True) 
+ 04D0 180B00005C        movb    #$00, EFlag                                       ; Set EFlag to 0 (False) 
+ 04D5 1820003B          lbra    STATE_CHAR_DONE                           ; Branch Always to STATE_CHAR_DONE    
+ 04D9           
+ 04D9           FFLAG_GO:
+ 04D9           
+ 04D9 F70050        tst   autoManualFlag                                  ; Test autoManualFlag 
+ 04DC 18270004          lbeq   AUTO_SET                                           ; If autoManualFlag is 0 (Next State - Auto), Branch to AUTO_SET
+ 04E0 18260018          lbne   MANUAL_SET                                         ; If autoManualFlag is 1 (Next State - Manual), Branch to MANUAL_SET
+ 04E4                   
+ 04E4           AUTO_SET:
+ 04E4           
+ 04E4 180B010063        movb   #$01, autoPrintFlag                        ; Set autoPrintFlag to 1 (True)                 
+ 04E9 180B000064        movb   #$00, manualPrintFlag              ; Set manualPrintFlag to 0 (False) 
+ 04EE 180B010050        movb   #$01, autoManualFlag                       ; Set autoManualFlag to 1 (Auto) 
+ 04F3 180B00005D        movb   #$00, FFlag                                        ; Set FFlag to 0 (False) 
+ 04F8 18200018          lbra   STATE_CHAR_DONE                        ; Branch Always to STATE_CHAR_DONE
+ 04FC           
+ 04FC           MANUAL_SET:
+ 04FC           
+ 04FC 180B000063        movb   #$00, autoPrintFlag                        ; Set autoPrintFlag to 0 (False)
+ 0501 180B010064        movb   #$01, manualPrintFlag              ; Set manualPrintFlag to 1 (True)     
+ 0506 180B000050        movb   #$00, autoManualFlag                       ; Set autoManualFlag to 1 (Manual)
+ 050B 180B00005D        movb   #$00, FFlag                                        ; Set FFlag to 0 (False) 
+ 0510 18200000          lbra   STATE_CHAR_DONE                        ; Branch Always to STATE_CHAR_DONE        
+ 0514           
+ 0514           STATE_CHAR_DONE:
+ 0514           
+ 0514 180B01004F        movb   #$01, stateVariableFlag            ; Set stateVariableFlag to 0 (True)
+ 0519 180B020000        movb   #$02,    mmState                           ; Set the Mastermind State Variable to 2 (Hub)
+ 051E 3D                rts                                                                       ; Return to Main
+ 051F                   
+ 051F           VALUE_CHAR_DONE:
+ 051F           
+ 051F 180B020000        movb   #$02,    mmState                           ; Set the Mastermind State Variable to 2 (Hub)
+ 0524 3D                rts                                                                       ; Return to Main
+ 0525           
+ 0525           ;===================== Mastermind State 7 - Update Values ======================
+ 0525           
+ 0525           mmstate7:
+ 0525           
+ 0525 7B003E            stab   stateVariable     
+ 0528 F70070        tst    promptUpFlag                                   ; Test promptUpFlag 
+ 052B 18260254          lbne   UPDATE_BUFFER_EXIT                 ; If promptUpFlag is 1 (True), Branch to UPDATE_BUFFER_EXIT
+ 052F F70052            tst    VRefFlag                                           ; Test VRefFlag
+ 0532 18260029          lbne   UPDATE_VREF                                        ; If VRefFlag is 1 (True), Branch to UPDATE_VREF
+ 0536 F70056            tst    KiFlag                                             ; Test KiFlag
+ 0539 18260046          lbne   UPDATE_KI                                          ; If KiFlag is 1 (True), Branch to UPDATE_KI
+ 053D F70057            tst    KpFlag                                             ; Test KpFlag
+ 0540 18260044          lbne   UPDATE_KP                                          ; If KiFlag is 1 (True), Branch to UPDATE_KI
+ 0544 F70053            tst    VActFlag                                           ; Test VActFlag
+ 0547 18260026          lbne   UPDATE_VACT                                        ; If VActFlag is 1 (True), Branch to UPDATE_VACT
+ 054B F70055            tst    errorFlag                                          ; Test errorFlag
+ 054E 1826003B          lbne   UPDATE_ERROR                                       ; If errorFlag is 1 (True), Branch to UPDATE_ERROR
+ 0552 F70054            tst    effortFlag                                         ; Test effortFlag
+ 0555 18260046          lbne   UPDATE_EFFORT                              ; If effortFlag is 1 (True), Branch to UPDATE_EFFORT
+ 0559 180B020000        movb   #$02, mmState                              ; Set the Mastermind State Variable to 2 (Hub)
+ 055E 3D                rts                                                                       ; Return to Main
+ 055F           
+ 055F           UPDATE_VREF:
+ 055F           	
+ 055F F70071            tst     VRefSign                                          ; Test VRefSign                  
+ 0562 2605              bne     NEGATIVE_VREF                             ; If VRefSign is 1 (Negative), Branch to NEGATIVE_VREF
+ 0564 FC0006        ldd         V_Ref                                             ; Load Accumulator D with V_Ref
+ 0567 2048          bra         BINARY_ASCII                      ; Branch Always to BINARY_ASCII
+ 0569           
+ 0569           NEGATIVE_VREF:
+ 0569           	   
+ 0569 CC0000        ldd         #$0000                                            ; Load Accumulator D with $0000 (0)            
+ 056C B30006        subd        V_Ref                             ; Subtract V_Ref from $0000 (0) to Get V_Ref to Convert 
+ 056F 2040          bra         BINARY_ASCII                              ; Branch Always to BINARY_ASCII 
+ 0571           
+ 0571           UPDATE_VACT:
+ 0571           	
+ 0571 F70072            tst     VActSign                          ; Test VActSign
+ 0574 2605              bne     NEGATIVE_VACT                         ; If VActSign is 1 (Negative), Branch to NEGATIVE_VACT
+ 0576 FC0008        ldd         V_Act                                             ; Load Accumulator D with V_Act
+ 0579 2036          bra         BINARY_ASCII                      ; Branch Always to BINARY_ASCII
+ 057B                   
+ 057B           NEGATIVE_VACT:
+ 057B           	   
+ 057B CC0000        ldd         #$0000                                    ; Load Accumulator D with $0000 (0)  
+ 057E B30008        subd        V_Act                             ; Subtract V_Act from $0000 (0) to Get V_Act to Convert 
+ 0581 202E          bra         BINARY_ASCII                              ; Branch Always to BINARY_ASCII 
+ 0583                   
+ 0583           UPDATE_KI:
+ 0583               
+ 0583 FC0014        ldd         Ki                                                        ; Load Accumulator D with Ki 
+ 0586 2029          bra         BINARY_ASCII                              ; Branch Always to BINARY_ASCII 
+ 0588                   
+ 0588           UPDATE_KP:
+ 0588             
+ 0588 FC0018        ldd         Kp                                                        ; Load Accumulator D with Kp
+ 058B 2024          bra         BINARY_ASCII                              ; Branch Always to BINARY_ASCII       
+ 058D           
+ 058D           UPDATE_ERROR:
+ 058D           	
+ 058D F70074            tst     errorSign                         ; Test errorSign
+ 0590 2605              bne     NEGATIVE_ERROR                            ; If errorSign is 1 (Negative), Branch to NEGATIVE_ERROR
+ 0592 FC000A        ldd         Error                                             ; Load Accumulator D with Error
+ 0595 201A          bra         BINARY_ASCII                      ; Branch Always to BINARY_ASCII
+ 0597           
+ 0597           NEGATIVE_ERROR:
+ 0597           	   
+ 0597 CC0000        ldd         #$0000                                    ; Load Accumulator D with $0000 (0)
+ 059A B3000A        subd        Error                             ; Subtract Error from $0000 (0) to Get Error to Convert
+ 059D 2012          bra         BINARY_ASCII                              ; Branch Always to BINARY_ASCII
+ 059F                   
+ 059F           UPDATE_EFFORT:
+ 059F           	
+ 059F F70073            tst     effortSign                                        ; Test effortSign           
+ 05A2 2605              bne     NEGATIVE_EFFORT                           ; If effortSign is 1 (Negative), Branch to NEGATIVE_EFFORT
+ 05A4 FC0024        ldd         Effort                                            ; Load Accumulator D with Effort
+ 05A7 2008          bra         BINARY_ASCII                              ; Branch Always to BINARY_ASCII       
+ 05A9           
+ 05A9           NEGATIVE_EFFORT:
+ 05A9           	   
+ 05A9 CC0000        ldd         #$0000                                    ; Load Accumulator D with $0000 (0)
+ 05AC B30024        subd        Effort                            ; Subtract Effort from $0000 (0) to Get Effort to Convert
+ 05AF 2000          bra         BINARY_ASCII                              ; Branch Always to BINARY_ASCII
+ 05B1                   
+ 05B1           BINARY_ASCII:
+ 05B1           	  
+ 05B1 180300370077      movw    #updateBuffer, updatePointer  ; Load First Address of updateBuffer into updatePointer   
+ 05B7 180B000044        movb    #$00, updateCounter                       ; Clear updateCounter
+ 05BC                      
+ 05BC           BINARY_ASCII_LOOP:
+ 05BC           
+ 05BC CE000A        ldx         #$000A                            ; Load Accumulator A with $000A (10)
+ 05BF CD0000        ldy         #$0000                            ; Load Y with $0000 (0)
+ 05C2 1814          edivs                                         ; (Y:D)/X ==> Result into Y, Remainder ==> D
+ 05C4 7D003C        sty         updateResult                      ; Store Y into updateResult
+ 05C7 CB30          addb        #$30                          ; Add $30 (30) to Accumulator B
+ 05C9 87            clra                                      ; Clear Accumulator A
+ 05CA FE0077        ldx         updatePointer                 ; Load X with updatePointer Address
+ 05CD 6B00          stab        0,x                               ; Store ASCII Value into updatePointer Address
+ 05CF 720044        inc         updateCounter                 ; Increment the updateCounter
+ 05D2 8D0000        cpy         #$0000                                    ; Compare Y to $0000 (0)
+ 05D5 18270009      lbeq        SIGN_CHECK                        ; If Y is 0, Branch to SIGN_CHECK
+ 05D9 08            inx                                           ; Increment X (updatePointer Address)
+ 05DA 7E0077        stx         updatePointer                     ; Store X into updatePointer
+ 05DD FC003C            ldd     updateResult                              ; Load D with updateResult
+ 05E0 20DA              bra     BINARY_ASCII_LOOP                         ; Branch Always to BINARY_ASCII_LOOP
+ 05E2           
+ 05E2           SIGN_CHECK:
+ 05E2           
+ 05E2           
+ 05E2 F70052            tst     VRefFlag                                          ; Test VRefFlag
+ 05E5 2627              bne             VREF_SIGN_CHECK                           ; If VRefFlag is 1 (True), Branch to VREF_SIGN_CHECK
+ 05E7 F70056            tst             KiFlag                                            ; Test KiFlag                 
+ 05EA 18260088          lbne    KI_KP_CHECK                                       ; If KiFlag is 1 (True), Branch to KI_KP_CHECK                
+ 05EE F70057            tst             KpFlag                                            ; Test KpFlag
+ 05F1 18260081          lbne    KI_KP_CHECK                                       ; If KiFlag is 1 (True), Branch to KI_KP_CHECK
+ 05F5 F70053            tst     VActFlag                                          ; Test VActFlag
+ 05F8 1826002E          lbne    VACT_SIGN_CHECK                           ; If VActFlag is 1 (True), Branch to VACT_SIGN_CHECK  
+ 05FC F70055            tst     errorFlag                                         ; Test errorFlag      
+ 05FF 1826003E          lbne    ERROR_SIGN_CHECK                          ; If errorFlag is 1 (True), Branch to ERROR_SIGN_CHECK
+ 0603 F70054            tst     effortFlag                                        ; Test effortFlag     
+ 0606 1826004E          lbne    EFFORT_SIGN_CHECK                         ; If effortFlag is 1 (True), Branch to EFFORT_SIGN_CHECK
+ 060A 1820014B          lbra    UPDATE_BUFFER_DONE                        ; Branch Always to UPDATE_BUFFER_DONE
+ 060E                                             
+ 060E           VREF_SIGN_CHECK:
+ 060E           
+ 060E 180B000052     movb    #$00, VRefFlag                               ; Set VRefFlag to 0 (False)
+ 0613 180B01006E        movb    #$01, updateLine1Flag             ; Set updateLine1Flag to 1 (True)     
+ 0618 180B01006F        movb    #$01, updateLine2Flag             ; Set updateLine2Flag to 1 (True)      
+ 061D CE0037            ldx     #updateBuffer                             ; Load X With the First Address of updateBuffer
+ 0620 CD0BB2        ldy     #VREF_BUF                             ; Load Y With the First Address of VRef_BUF
+ 0623 F70071        tst     VRefSign                                      ; Test VRefSign
+ 0626 2648              bne         NEG_SIGN                                      ; If VRefSign is 1 (Negative), Branch to NEG_SIGN     
+ 0628 2040              bra         POS_SIGN                      ; Branch Always to POS_SIGN                                      
+ 062A           
+ 062A           VACT_SIGN_CHECK:
+ 062A                
+ 062A 180B000053        movb    #$00, VActFlag                            ; Set VActFlag to 0 (False)
+ 062F CE0037            ldx             #updateBuffer                             ; Load X With the First Address of updateBuffer
+ 0632 CD0BB6        ldy         #VACT_BUF                                 ; Load Y With the First Address of VACT_BUF
+ 0635 F70072        tst         VActSign                                  ; Test VActSign       
+ 0638 2730              beq     POS_SIGN                                          ; If VActSign is 0 (Positive), Branch to NEG_SIGN
+ 063A 180B000072        movb    #$00, VActSign                            ; Set VActFlag to 1 (Negative)
+ 063F 202F              bra             NEG_SIGN                                          ; Branch Always to NEG_SIGN
+ 0641                                                               
+ 0641           ERROR_SIGN_CHECK:
+ 0641                  
+ 0641 180B000055        movb    #$00, errorFlag                           ; Set errorFlag to 0 (False)
+ 0646 CE0037            ldx             #updateBuffer                             ; Load X With the First Address of updateBuffer
+ 0649 CD0BBA            ldy     #ERROR_BUF                                ; Load Y With the First Address of ERROR_BUF
+ 064C F70074        tst         errorSign                         ; Test errorSign              
+ 064F 2719              beq     POS_SIGN                                      ; If errorSign is 0 (Positive), Branch to POS_SIGN  
+ 0651 180B000074        movb    #$00, errorSign                       ; Set errorSign to 1 (Negative)
+ 0656 2018              bra             NEG_SIGN                      ; Branch Always to NEG_SIGN                                                          
+ 0658           
+ 0658           EFFORT_SIGN_CHECK:
+ 0658                  
+ 0658 180B000054        movb    #$00, effortFlag                          ; Set effortFlag to 0 (False)
+ 065D CE0037            ldx             #updateBuffer                             ; Load X With the First Address of updateBuffer
+ 0660 CD0BBE        ldy         #EFFORT_BUF                       ; Load Y With the First Address of EFFORT_BUF  
+ 0663 F70073            tst             effortSign
+ 0666 2608              bne             NEG_SIGN
+ 0668 2000              bra             POS_SIGN
+ 066A                      
+ 066A           POS_SIGN:
+ 066A           
+ 066A 1808402B          movb    #'+',0,y                                          ; Move '+' into the First Buffer Address              
+ 066E 2039              bra     UPDATE_OUT                                        ; Branch Always to UPDATE_OUT
+ 0670                      
+ 0670           NEG_SIGN:   
+ 0670           	   	  	
+ 0670 1808402D          movb    #'-',0,Y                          ; Move '-' into the First Buffer Address      
+ 0674 2033              bra     UPDATE_OUT                                ; Branch Always to UPDATE_OUT 
+ 0676           
+ 0676           KI_KP_CHECK:
+ 0676           
+ 0676 F70056            tst     KiFlag                                            ; Test KiFlag
+ 0679 2609              bne     KI_CHECK                                          ; If KiFlag is 1 (True), Branch to KI_CHECK
+ 067B F70057            tst     KpFlag                                            ; Test KpFlag
+ 067E 2617              bne     KP_CHECK                                          ; If KpFlag is 1 (True), Branch to KP_CHECK
+ 0680 182000D5          lbra    UPDATE_BUFFER_DONE                        ; Branch Always to UPDATE_BUFFER_DONE
+ 0684           
+ 0684           KI_CHECK:
+ 0684 00        bgnd
+ 0685 180B000056        movb    #$00, KiFlag                              ; Set KiFlag to 0 (False)
+ 068A 180B01006F        movb    #$01, updateLine2Flag             ; Set updateLine2Flag to 0 (False)    
+ 068F CE0037            ldx             #updateBuffer                             ; Load X With the First Address of updateBuffer       
+ 0692 CD0BC2        ldy         #KI_BUF                       ; Load Y With the First Address of KI_BUF         
+ 0695 2012              bra     UPDATE_OUT                                ; Branch Always to UPDATE_OUT_KI_KP
+ 0697           
+ 0697           KP_CHECK:
+ 0697           		 
+ 0697 180B000057        movb    #$00, KpFlag                              ; Set KpFlag to 0 (False)
+ 069C 180B01006F        movb    #$01, updateLine2Flag             ; Set updateLine2Flag to 1 (False)            
+ 06A1 CE0037            ldx             #updateBuffer                             ; Load X With the First Address of updateBuffer
+ 06A4 CD0BC7        ldy         #KP_BUF                       ; Load Y With the First Address of KP_BUF                 
+ 06A7 2000              bra     UPDATE_OUT                                        ; Branch Always to UPDATE_OUT_KI_KP
+ 06A9                                                      
+ 06A9           UPDATE_OUT:
+ 06A9           
+ 06A9 730044        dec         updateCounter                             ; Decrement updateCounter
+ 06AC 271A          beq         ONE_VALUE                                 ; If One ASCII Value, Branch to ONE_VALUE
+ 06AE 730044        dec         updateCounter                             ; Decrement updateCounter     
+ 06B1 275E          beq         TWO_VALUES                                ; If Two ASCII Values, Branch to TWO_VALUES   
+ 06B3 730044        dec         updateCounter                             ; Decrement updateCounter     
+ 06B6 2767          beq         THREE_VALUES                      ; If Three ASCII Values, Branch to THREE_VALUES       
+ 06B8 730044        dec         updateCounter                             ; Decrement updateCounter     
+ 06BB 2770          beq         FOUR_VALUES                               ; If Four ASCII Values, Branch to FOUR_VALUES                            
+ 06BD 730044        dec         updateCounter                             ; Decrement updateCounter     
+ 06C0 1827007F      lbeq        FIVE_VALUES                               ; If Five ASCII Values, Branch to FIVE_VALUES 
+ 06C4 18200091      lbra        UPDATE_BUFFER_DONE                        ; Branch Always to UPDATE_BUFFER_DONE
+ 06C8               
+ 06C8           ONE_VALUE:
+ 06C8           
+ 06C8 F70056        tst         KiFlag
+ 06CB 2613          bne         KI_ONE_VALUE
+ 06CD F70057            tst             KpFlag
+ 06D0 2624          bne         KP_ONE_VALUE                     
+ 06D2 180A0043      movb        0,x,3,y                                           ; Move the Single Value into the Third Buffer Position
+ 06D6 18084230          movb    #'0',2,y                                          ; Move 0 into the Second Buffer Position
+ 06DA 18084130          movb    #'0',1,y                                          ; Move 0 into the First Buffer Position            
+ 06DE 2079          bra         UPDATE_BUFFER_DONE                        ; Branch Always to UPDATE_BUFFER_DONE
+ 06E0           
+ 06E0           KI_ONE_VALUE:
+ 06E0                              
+ 06E0 180A0044      movb        0,x,4,y                                           ; Move the Single Value into the Third Buffer Position
+ 06E4 18084330          movb    #'0',3,y                                          ; Move the Single Value into the Third Buffer Position
+ 06E8 18084230          movb    #'0',2,y                                          ; Move 0 into the Second Buffer Position
+ 06EC 18084130          movb    #'0',1,y                                          ; Move 0 into the First Buffer Position
+ 06F0 18084030          movb    #'0',0,y                                          ; Move 0 into the First Buffer Position            
+ 06F4 2063          bra         UPDATE_BUFFER_DONE                        ; Branch Always to UPDATE_BUFFER_DONE
+ 06F6                   
+ 06F6           KP_ONE_VALUE:
+ 06F6           
+ 06F6 180B000057     movb    #$00, KpFlag                   
+ 06FB 180A0044      movb        0,x,4,y                                           ; Move the Single Value into the Third Buffer Position
+ 06FF 18084330          movb    #'0',3,y                                          ; Move the Single Value into the Third Buffer Position
+ 0703 18084230          movb    #'0',2,y                                          ; Move 0 into the Second Buffer Position
+ 0707 18084130          movb    #'0',1,y                                          ; Move 0 into the First Buffer Position 
+ 070B 18084030          movb    #'0',0,y                                          ; Move 0 into the First Buffer Position            
+ 070F 2048          bra         UPDATE_BUFFER_DONE                        ; Branch Always to UPDATE_BUFFER_DONE
+ 0711                   
+ 0711           TWO_VALUES:
+ 0711           
+ 0711 180A0043      movb   0,x,3,y                            ; Move the First Value into the Third Buffer Position
+ 0715 180A0142      movb   1,x,2,y                                                ; Move the Second Value into the Second Buffer Position
+ 0719 18084130          movb   #'0',1,y                                           ; Move 0 into the First Buffer Position
+ 071D 203A          bra    UPDATE_BUFFER_DONE                     ; Branch Always to UPDATE_BUFFER_DONE
+ 071F           
+ 071F           THREE_VALUES:
+ 071F           	
+ 071F 180A0043      movb   0,x,3,y                            ; Move the First Value into the Third Buffer Position
+ 0723 180A0142      movb   1,x,2,y                                                ; Move the Second Value into the Second Buffer Position
+ 0727 180A0241      movb   2,x,1,y                                ; Move the Third Value into the First Buffer Position
+ 072B 202C          bra    UPDATE_BUFFER_DONE                     ; Branch Always to UPDATE_BUFFER_DONE
+ 072D           
+ 072D           FOUR_VALUES:
+ 072D           
+ 072D 180A0044      movb   0,x,4,y                                ; Move the First Value into the Fourth Buffer Position
+ 0731 180A0143      movb   1,x,3,y                                ; Move the Second Value into the Third Buffer Position
+ 0735 180A0242      movb   2,x,2,y                                ; Move the Third Value into the Second Buffer Position
+ 0739 180A0341      movb   3,x,1,y                                ; Move the Fourth Value into the First Buffer Position
+ 073D 18084030          movb   #'0',0,y                                           ; Move 0 into the First Buffer Position
+ 0741 2016          bra    UPDATE_BUFFER_DONE                     ; Branch Always to UPDATE_BUFFER_DONE
+ 0743           
+ 0743           FIVE_VALUES:
+ 0743           
+ 0743 180A0044      movb   0,x,4,y                                ; Move the First Value into the Fifth Buffer Position
+ 0747 180A0143      movb   1,x,3,y                                ; Move the Second Value into the Fourth Buffer Position
+ 074B 180A0242      movb   2,x,2,y                                ; Move the Third Value into the Third Buffer Position
+ 074F 180A0341      movb   3,x,1,y                                ; Move the Fourth Value into the Second Buffer Position
+ 0753 180A0440      movb   4,x,0,y                                ; Move the Fifth Value into the First Buffer Position
+ 0757 2000          bra    UPDATE_BUFFER_DONE                     ; Branch Always to UPDATE_BUFFER_DONE
+ 0759           
+ 0759           
+ 0759                   
+ 0759           UPDATE_BUFFER_DONE:
+ 0759           
+ 0759 F70052            tst    VRefFlag                                           ; Test VRefFlag
+ 075C 1826FDFF          lbne   UPDATE_VREF                                        ; If VRefFlag is 1 (True), Branch to UPDATE_VREF
+ 0760 F70056            tst    KiFlag                                             ; Test KiFlag
+ 0763 1826FE1C          lbne   UPDATE_KI                                          ; If KiFlag is 1 (True), Branch to UPDATE_KI
+ 0767 F70057            tst    KpFlag                                             ; Test KpFlag
+ 076A 1826FE1A          lbne   UPDATE_KP                                          ; If KiFlag is 1 (True), Branch to UPDATE_KI
+ 076E F70053            tst    VActFlag                                           ; Test VActFlag
+ 0771 1826FDFC          lbne   UPDATE_VACT                                        ; If VActFlag is 1 (True), Branch to UPDATE_VACT
+ 0775 F70055            tst    errorFlag                                          ; Test errorFlag
+ 0778 1826FE11          lbne   UPDATE_ERROR                                       ; If errorFlag is 1 (True), Branch to UPDATE_ERROR
+ 077C F70054            tst    effortFlag                                         ; Test effortFlag
+ 077F 1826FE1C          lbne   UPDATE_EFFORT                              ; If effortFlag is 1 (True), Branch to UPDATE_EFFORT
+ 0783                      
+ 0783           UPDATE_BUFFER_EXIT: 
+ 0783           
+ 0783 F6003E            ldab   stateVariable                    
+ 0786 180B00006D     movb   #$00, updateValuesFlag                ; Set updateValuesFlag to 0 (False)
+ 078B 180B020000        movb   #$02, mmState                              ; Set the Mastermind State Variable to 2 (Hub)                  
+ 0790 3D                rts                                                                       ; Return to Main
+ 0791                   
+ 0791           ;=========  Mastermind - Miscellaneous Sub-Rountines / Branches   ==============
+ 0791           
+ 0791           BUFFER_STORE:
+ 0791           
+ 0791 F70052            tst        VRefFlag                                               ; Test VRefFlag
+ 0794 2626              bne        BUFFER_STORE_VREF                      ; If VRefFlag is 1 (True), Branch to BUFFER_STORE_VREF
+ 0796 B60043            ldaa   digitCounter                   ; Load Accumulator A with digitCounter
+ 0799 8105              cmpa   #$05                           ; Compare Accumulator A with $05 (5)
+ 079B 2C45              bge    BUFFER_STORE_LIMIT             ; If A is higher or equal than $05 (5), Branch to BUFFER_STORE_LIMIT
+ 079D 720043            inc    digitCounter                                       ; Increment digitCounter
+ 07A0 FE0075            ldx    pointer                        ; Load X with pointer
+ 07A3 F6002E            ldab   keyStore                                   ; Load Accumulator B with digitStore
+ 07A6 6B00              stab   0,x                            ; Store Contents of B into X
+ 07A8 08                inx                                   ; Increment X
+ 07A9 7E0075            stx    pointer                        ; Store Contents of X into pointer
+ 07AC 180B010047        movb   #$01, echoFlag                 ; Set echoFlag to 1 (True)
+ 07B1 180B000046        movb   #$00, keyFlag                  ; Set keyFlag to 0 (False)
+ 07B6 180B020000        movb   #$02, mmState                              ; Set the Mastermind State Variable to 2 (Hub)
+ 07BB 3D                rts                                                                       ; Return to Main
+ 07BC           
+ 07BC           BUFFER_STORE_VREF:
+ 07BC           
+ 07BC B60043            ldaa   digitCounter                   ; Load Accumulator A with digitCounter
+ 07BF 8103              cmpa   #$03                           ; Compater Accumulator with $03 (3)
+ 07C1 2C1F              bge    BUFFER_STORE_LIMIT             ; If A is higher or equal than $03 (3), Branch to BUFFER_STORE_LIMIT
+ 07C3 720043            inc    digitCounter                                       ; Increment digitCounter
+ 07C6 FE0075            ldx    pointer                        ; Load X with pointer
+ 07C9 F6002E            ldab   keyStore                                   ; Load Accumulator B with digitStore
+ 07CC 6B00              stab   0,x                            ; Store Contents of B into X
+ 07CE 08                inx                                   ; Increment X
+ 07CF 7E0075            stx    pointer                        ; Store Contents of X into pointer
+ 07D2 180B010047        movb   #$01, echoFlag                 ; Set echoFlag to 1 (True)
+ 07D7 180B000046        movb   #$00, keyFlag                  ; Set keyFlag to 0 (False)
+ 07DC 180B020000        movb   #$02, mmState                              ; Set the Mastermind State Variable to 2 (Hub)
+ 07E1 3D                rts                                                                       ; Return to Main
+ 07E2                   
+ 07E2           BUFFER_STORE_LIMIT:
+ 07E2           
+ 07E2 C600              ldab   #$00                           ; Load Accumulator B with $00 (0)
+ 07E4 180B000047        movb   #$00, echoFlag                 ; Set echoFlag to 0 (True)
+ 07E9 180B000046        movb   #$00, keyFlag                  ; Set keyFlag to 0 (False)
+ 07EE 180B00004B        movb   #$00, digitFlag                ; Set digitFlag to 0 (True)
+ 07F3 180B020000        movb   #$02, mmState                              ; Set the Mastermind State Variable to 2 (Hub)
+ 07F8 3D                rts                                                                       ; Return to Main      
+ 07F9           
+ 07F9           CLEAR_TEMPLATE:
+ 07F9           
+ 07F9 FE0BB2        ldx    VREF_BUF                               ; Moves Zeros and '+' into VREF_BUF
+ 07FC 1808002B      movb   #'+',0,x
+ 0800 18080130      movb   #'0',1,x
+ 0804 18080230      movb   #'0',2,x
+ 0808 18080330      movb   #'0',3,x
+ 080C                  
+ 080C FE0BB6            ldx    VACT_BUF                                   ; Moves Zeros and '+' into VACT_BUF
+ 080F 1808002B      movb   #'+',0,x
+ 0813 18080130      movb   #'0',1,x
+ 0817 18080230      movb   #'0',2,x
+ 081B 18080330      movb   #'0',3,x
+ 081F                  
+ 081F FE0BBA            ldx    ERROR_BUF                                  ; Moves Zeros and '+' into ERROR_BUF
+ 0822 1808002B      movb   #'+',0,x
+ 0826 18080130      movb   #'0',1,x
+ 082A 18080230      movb   #'0',2,x
+ 082E 18080330      movb   #'0',3,x
+ 0832                   
+ 0832 FE0BBE        ldx    EFFORT_BUF                             ; Moves Zeros and '+' into EFFORT_BUF
+ 0835 1808002B      movb   #'+',0,x
+ 0839 18080130      movb   #'0',1,x
+ 083D 18080230      movb   #'0',2,x
+ 0841 18080330      movb   #'0',3,x
+ 0845                   
+ 0845 FE0BC2        ldx    KI_BUF                                     ; Moves Zeros into KI_BUF
+ 0848 18080030      movb   #'0',0,x
+ 084C 18080130      movb   #'0',1,x
+ 0850 18080230      movb   #'0',2,x
+ 0854 18080330      movb   #'0',3,x
+ 0858 18080430      movb   #'0',4,x     
+ 085C                      
+ 085C FE0BC7        ldx    KP_BUF                                     ; Moves Zeros into KI_BUF
+ 085F 18080030      movb   #'0',0,x
+ 0863 18080130      movb   #'0',1,x
+ 0867 18080230      movb   #'0',2,x
+ 086B 18080430      movb   #'0',4,x
+ 086F 160000        jsr    UPDATELCDL1                            ; Jump to subtrountine to Update Line 1 of LCD
+ 0872 160000        jsr    UPDATELCDL2                            ; Jump to subtrountine to Update Line 2 of LCD
+ 0875 3D                rts                                                                       ; Return to Main      
+ 0876                   
+ 0876           ;=========================  Key Pad Driver Sub-Routine   =======================
+ 0876           
+ 0876           KPD:
+ 0876           
+ 0876 B60001            ldaa   kpdState                               
+ 0879 18270006          lbeq   kpdstate0                                  ; Initialization of Key Pad Driver
+ 087D 43                deca                                  
+ 087E 18270010          lbeq   kpdstate1                                  ; Wait for the Key Press to Be Stored in Buffer
+ 0882 3D                rts                                                                       ; Return to Main      
+ 0883           
+ 0883           ;========  Key Pad Driver State 0 - Initialization of Key Pad Driver   =========
+ 0883           
+ 0883           kpdstate0: 	
+ 0883           			
+ 0883 160000        jsr    INITKEY                        ; Jump to Subroutine INITKEY
+ 0886 160000        jsr    FLUSH_BFR                      ; Jump to Subroutine FLUSH_BFR
+ 0889 160000        jsr    KP_ACTIVE                      ; Jump to Subroutine KP_ACTIVE
+ 088C 180B010001     movb   #$01, kpdState                 ; Set the KPD State Variable to 1
+ 0891 3D                rts                                                                       ; Return to Main      
+ 0892           
+ 0892           ;== Key Pad Driver State 1 - Wait for the Key Press to Be Stored in Buffer   ===
+ 0892           
+ 0892           kpdstate1:
+ 0892                  
+ 0892 F70000        tst    L$KEY_FLG                      ; Test L$KEY_FLG
+ 0895 2611              bne        NO_KEY_PRESS                           ; If L$KEY_FLG has Key, Branch to NO_KEY_PRESS
+ 0897 160000        jsr    GETCHAR                        ; Jump to Subroutine GETCHAR
+ 089A 7B002E            stab   keyStore                       ; Store ASCII Char from Accumulator B into keyStore
+ 089D 180B010046        movb   #$01, keyFlag                  ; Set keyFlag to 1 (True)
+ 08A2 180B010001        movb   #$01, kpdState                             ; Set the KPD State Variable to 1
+ 08A7 3D                rts                                                                       ; Return to Main
+ 08A8           
+ 08A8           NO_KEY_PRESS:
+ 08A8           
+ 08A8 180B010001        movb   #$01,kpdState                              ; Set the KPD State Variable to 1
+ 08AD 3D                rts                                                                       ; Return to Main
+ 08AE           
+ 08AE           ;=============================  Display Sub-Routine   ==========================
+ 08AE           
+ 08AE           DISPLAY:
+ 08AE           
+ 08AE B60002            ldaa   displayState                   ; Display to be Branched to Depending on Value
+ 08B1 18270029          lbeq   displaystate0                  ; Initalize LCD Screen & Cursor
+ 08B5 43                deca
+ 08B6 18270036          lbeq   displaystate1                  ; Display Hub
+ 08BA 43                deca
+ 08BB 18270087          lbeq   displaystate2                  ; Update LCD Template Values
+ 08BF 43                deca
+ 08C0 182700D4          lbeq   displaystate3                  ; Display Ref Velocity Prompt 
+ 08C4 43                deca
+ 08C5 18270120          lbeq   displaystate4                  ; Display Ki Prompt
+ 08C9 43                deca
+ 08CA 1827016C          lbeq   displaystate5                  ; Display Kp Prompt
+ 08CE 43                deca
+ 08CF 182701E3          lbeq   displaystate6                  ; Initializing & Printing Digit
+ 08D3 43                deca
+ 08D4 18270225          lbeq   displaystate7                  ; Backspace       
+ 08D8 43                deca
+ 08D9 1827036E          lbeq   displaystate8                  ; LCD Update
+ 08DD 3D            rts         
+ 08DE           
+ 08DE           ;==================== Display State 0 - Initialize LCD Screen & Cursor ===================
+ 08DE                   
+ 08DE           displaystate0:
+ 08DE           
+ 08DE 160000            jsr        INITLCD                        ; Initalize LCD Screen
+ 08E1 160000            jsr    CLRSCREEN                      ; Clear LCD Screen
+ 08E4 160000            jsr    CURSOR                         ; Show Cursor in LCD Screen
+ 08E7 160000            jsr        LCDTEMPLATE                                    ;     Library Command to Update LCD Screen          
+ 08EA 180B010002        movb   #$01, displayState                     ; Set Next Display to HUB
+ 08EF 3D                rts
+ 08F0           
+ 08F0           ;============================= Display State 1 - Display Hub =============================
+ 08F0                   
+ 08F0           displaystate1:
+ 08F0            
+ 08F0 F70068        tst    VRefPromptFlag                     ; Test to see if C Character (V_Ref) has been Pressed
+ 08F3 2627          bne    DISPLAY_VREF_PROMPT            ; Branch VREFFLAG if true
+ 08F5 F70069        tst    KiPromptFlag                   ; Test KIFLAG
+ 08F8 2628          bne    DISPLAY_KI_PROMPT              ; Branch to KI_DISPLAY, if true
+ 08FA F7006A        tst    KpPromptFlag                   ; TEST WAVE_FLAG
+ 08FD 2629          bne    DISPLAY_KP_PROMPT              ; If it is true then branch and display
+ 08FF F70047        tst    echoFlag                       ; Test ECHOFLAG
+ 0902 18260028      lbne   KEY_PRINT                      ; If ECHOFLAG is TRUE, branch to ECHO
+ 0906 F70067        tst    backspacePrint                 ; Test BSPACEFLAG
+ 0909 18260027      lbne   BACKSPACE_PRINT                ; If BSPACEFLAG is TRUE, branch to DISPBSPACE
+ 090D F7004F            tst        stateVariableFlag              ; Test VariableFlag
+ 0910 18260026          lbne   STATE_VARIABLE_PRINT           ; If stateVariableFlag is TRUE, Branch to STATE_VARIABLE_PRINT
+ 0914 F70051            tst        LCDUpdateFlag                  ; Test LCDUpdateFlag
+ 0917 18260025          lbne   LCD_UPDATE_PRINT               ; If LCDUpdateFlag is TRUE , Branch to LCD_UPDATE_PRINT
+ 091B 3D            rts
+ 091C                   
+ 091C           DISPLAY_VREF_PROMPT:
+ 091C           
+ 091C 180B020002     movb   #$02, displayState             ; Set state to display DISP VREF message
+ 0921 3D            rts 
+ 0922                           
+ 0922           DISPLAY_KI_PROMPT: 
+ 0922           
+ 0922 180B030002     movb   #$03, displayState             ; Set state to KI display
+ 0927 3D            rts
+ 0928                      
+ 0928           DISPLAY_KP_PROMPT:
+ 0928           
+ 0928 180B040002     movb   #$04, displayState             ; Set state to KP display
+ 092D 3D            rts
+ 092E                   
+ 092E           KEY_PRINT:
+ 092E           
+ 092E 180B050002     movb   #$05, displayState             ; Set state to echo digits pressed
+ 0933 3D            rts
+ 0934            
+ 0934           BACKSPACE_PRINT:
+ 0934           
+ 0934 180B060002     movb   #$06, displayState             ; Set state to display Backspace
+ 0939 3D            rts
+ 093A           
+ 093A           STATE_VARIABLE_PRINT:
+ 093A           
+ 093A 180B070002     movb   #$07, displayState             ; Set state to Update LCD screen
+ 093F 3D            rts
+ 0940           
+ 0940           LCD_UPDATE_PRINT:
+ 0940           
+ 0940 180B080002     movb   #$08, displayState             ; Set state to Update LCD screen
+ 0945 3D            rts
+ 0946           
+ 0946           
+ 0946           ;===================== Display State 2 - VRef Prompt Print =====================
+ 0946                   
+ 0946           displaystate2:
+ 0946           
+ 0946 8640          ldaa   #$40                           ; Load Accumulator A with LCD Address $07
+ 0948 CE0958        ldx    #VREF_PRINT_MESSAGE            ; Load Index Register X with Address of NO_DIGITS_PRINT
+ 094B 160C7F        jsr    DISPLAY_CHAR                       ; Jump to Subroutine DISPLAY_CHAR
+ 094E FE0079        ldx    displayPointer                 ; Load X with displayPointer
+ 0951 E600          ldab   0,x                            ; Load B with the Contents in X
+ 0953 18270027      lbeq   DONE_VREF_PRINT                                ; If B=$00, Branch to DONE_NO_DIGITS_PRINT
+ 0957 3D            rts
+ 0958           
+ 0958           VREF_PRINT_MESSAGE:
+ 0958           
+ 0958 454E54455220565245463A20202020202020202020202020202020202020202020202020  .ascii  'ENTER VREF:                         '
+ 097C 00            .byte       $00
+ 097D 3D            rts               
+ 097E                      
+ 097E           DONE_VREF_PRINT:
+ 097E           	
+ 097E 864C              ldaa   #$4C                           ; Load A with LCD Address of 76
+ 0980 160000            jsr        SETADDR                        ; Set the Cursor at The Address in A
+ 0983 180B000068        movb   #$00, VRefPromptFlag           ; Clear the VRefPromptFlag
+ 0988 180B010049        movb   #$01, firstChar                ; Clear firstChar Flag
+ 098D 180B01006B        movb   #$01, digitAllowed                     ; Clear the digitAllowed Flag   
+ 0992 180B010002     movb   #$01, displayState             ; Return to Display State 1
+ 0997 3D                rts
+ 0998                   
+ 0998           ;===================== Display State 3 - Ki Prompt Print =======================
+ 0998                   
+ 0998           displaystate3:
+ 0998           
+ 0998 8640          ldaa   #$40                           ; Load Accumulator A with LCD Address 64
+ 099A CE09AA        ldx    #KI_PRINT_MESSAGE              ; Load Index Register X with Address of NO_DIGITS_PRINT
+ 099D 160C7F        jsr    DISPLAY_CHAR                       ; Jump to Subroutine DISPLAY_CHAR
+ 09A0 FE0079        ldx    displayPointer                 ; Load X with displayPointer
+ 09A3 E600          ldab   0,x                            ; Load B with the Contents in X
+ 09A5 18270026      lbeq   DONE_KI_PRINT                              ; If B=$00, Branch to DONE_NO_DIGITS_PRINT
+ 09A9 3D            rts
+ 09AA           
+ 09AA           KI_PRINT_MESSAGE:
+ 09AA           
+ 09AA 454E54455220313032342A4B493A202020202020202020202020202020202020202020    .ascii  'ENTER 1024*KI:                     '
+ 09CD 00            .byte       $00
+ 09CE 3D            rts               
+ 09CF                      
+ 09CF           DONE_KI_PRINT:
+ 09CF           	
+ 09CF 864F              ldaa   #$4F                           ; Load Accumulator A with LCD Address 79
+ 09D1 160000            jsr        SETADDR                        ; Set the Cursor at The Address in A
+ 09D4 180B000069        movb   #$00, KiPromptFlag             ; Clear KiPromptFlag
+ 09D9 180B010049        movb   #$01, firstChar                ; Clear firstChar Flag 
+ 09DE 180B01006B        movb   #$01, digitAllowed                     ; Clear digitAllowed           
+ 09E3 180B010002     movb   #$01, displayState             ; Return to Display State 1
+ 09E8 3D                rts
+ 09E9                   
+ 09E9           ;===================== Display State 4 - Ki Prompt Print =======================
+ 09E9                   
+ 09E9           displaystate4:
+ 09E9           
+ 09E9 8640          ldaa   #$40                           ; Load Accumulator A with LCD Address $07
+ 09EB CE09FB        ldx    #KP_PRINT_MESSAGE              ; Load Index Register X with Address of NO_DIGITS_PRINT
+ 09EE 160C7F        jsr    DISPLAY_CHAR                       ; Jump to Subroutine DISPLAY_CHAR
+ 09F1 FE0079        ldx    displayPointer                 ; Load X with displayPointer
+ 09F4 E600          ldab   0,x                            ; Load B with the Contents in X
+ 09F6 18270026      lbeq   DONE_KP_PRINT                                  ; If B=$00, Branch to DONE_NO_DIGITS_PRINT
+ 09FA 3D            rts
+ 09FB           
+ 09FB           KP_PRINT_MESSAGE:
+ 09FB           
+ 09FB 454E54455220313032342A4B503A202020202020202020202020202020202020202020    .ascii  'ENTER 1024*KP:                     '
+ 0A1E 00            .byte       $00
+ 0A1F 3D            rts               
+ 0A20            
+ 0A20           DONE_KP_PRINT:
+ 0A20           	
+ 0A20 864F              ldaa   #$4F                           ; Load Accumulator A with LCD Address 79
+ 0A22 160000            jsr        SETADDR                        ; Set the Cursor at The Address in A
+ 0A25 180B00006A        movb   #$00, KpPromptFlag             ; Clear KpPromptFlag
+ 0A2A 180B010049        movb   #$01, firstChar                ; Clear firstChar
+ 0A2F 180B01006B        movb   #$01, digitAllowed                     ; Clear digitAllowed   
+ 0A34 180B010002     movb   #$01, displayState             ; Return to Display State 1
+ 0A39 3D                rts
+ 0A3A                   
+ 0A3A           ;================ Display State 5 - Initializing & Printing Digit for Entry ====
+ 0A3A                   
+ 0A3A           displaystate5:
+ 0A3A           
+ 0A3A F70066            tst    VRefPosPrintFlag               ; Test VRefPosPrintFlag
+ 0A3D 1826000B          lbne   PRINT_POSITIVE                 ; If VRefPosPrintFlag TRUE, Branch to PRINT_POSITIVE
+ 0A41 F70065            tst        VRefNegPrintFlag               ; Test VRefNegPrintFlag
+ 0A44 1826000D          lbne   PRINT_NEG                      ; If VRefNegPrintFlag TRUE, Branch to PRINT_NEG
+ 0A48 18200012          lbra   PRINT_INIT                     ; Otherwise, Branch to PRINT_INIT
+ 0A4C                   
+ 0A4C           PRINT_POSITIVE:
+ 0A4C           
+ 0A4C C62B              ldab   #$2B                           ; Load Accumulator B with ASCII value of '+'
+ 0A4E 160000            jsr        OUTCHAR                        ; Print Character Stored in B
+ 0A51 1820004D          lbra   SIGN_PRINT_DONE                ; Branch to SIGN_PRINT_DONE
+ 0A55                   
+ 0A55           PRINT_NEG:
+ 0A55           	
+ 0A55 C62D              ldab   #$2D                           ; Load Accumulator B with ASCII value of '-'
+ 0A57 160000            jsr        OUTCHAR                        ; Print Character Stored in B
+ 0A5A 18200044          lbra   SIGN_PRINT_DONE                ; Branch to SIGN_PRINT_DONE
+ 0A5E                   
+ 0A5E           PRINT_INIT:	
+ 0A5E           	  
+ 0A5E B60043        ldaa   digitCounter                   ; Load Accumulator A with digitCounter
+ 0A61 8100          cmpa   #$00                           ; Compare A with $00 
+ 0A63 260A              bne        DIGIT_NOT_FIRST                ; If A not $00, Branch to DIGIT_NOT_FIRST
+ 0A65 2000              bra        PRINT_FIRST_DIGIT              ; Otherwise, Branch to PRINT_FIRST_DIGIT
+ 0A67             
+ 0A67           PRINT_FIRST_DIGIT:
+ 0A67           
+ 0A67 F6002E            ldab   keyStore                       ; Load Accumulator B With digitStore
+ 0A6A 160000            jsr        OUTCHAR                        ; Print Character Stored in B
+ 0A6D 2025              bra        DIGIT_PRINT_DONE               ; Branch to INIT_PRINT_DONE
+ 0A6F                      
+ 0A6F           DIGIT_NOT_FIRST:
+ 0A6F           
+ 0A6F F70052            tst        VRefFlag                       ; Test VRefFlag
+ 0A72 1826000F          lbne   DIGIT_NOT_FIRST_VREF           ; If VRefFlag TRUE, Branch to DIGIT_NOT_FIRST_VREF
+ 0A76 B60043            ldaa   digitCounter                   ; Load Accumulator A with digitCounter
+ 0A79 8106              cmpa   #$06                           ; Compare A with $03
+ 0A7B 2C17          bge    DIGIT_PRINT_DONE               ; If Value in A > $03, Branch to DIGIT_PRINT_DONE
+ 0A7D F6002E            ldab   keyStore                       ; Load Accumulator B with digitStore
+ 0A80 160000            jsr        OUTCHAR                        ; Print Character of ASCII Value in Stored in B
+ 0A83 200F              bra        DIGIT_PRINT_DONE               ; Branch to INIT_PRINT_DONE
+ 0A85                   
+ 0A85           DIGIT_NOT_FIRST_VREF:
+ 0A85           
+ 0A85 B60043            ldaa   digitCounter                   ; Load Accumulator A with digitCounter
+ 0A88 8104              cmpa   #$04                           ; Compare A with $03
+ 0A8A 2C08          bge    DIGIT_PRINT_DONE               ; If Value in A > $03, Branch to DIGIT_PRINT_DONE
+ 0A8C F6002E            ldab   keyStore                       ; Load Accumulator B with digitStore
+ 0A8F 160000            jsr        OUTCHAR                        ; Print Character of ASCII Value in Stored in B
+ 0A92 2000              bra        DIGIT_PRINT_DONE               ; Branch to INIT_PRINT_DONE 
+ 0A94                   
+ 0A94           DIGIT_PRINT_DONE:
+ 0A94           
+ 0A94 790047            clr        echoFlag                       ; Set echoFlag to FALSE
+ 0A97 180B01004B        movb   #$01, digitFlag                ; Clear digitFlag
+ 0A9C 180B010002        movb   #$01, displayState             ; Return Back to Display Hub
+ 0AA1 3D                rts
+ 0AA2           
+ 0AA2           SIGN_PRINT_DONE:
+ 0AA2           
+ 0AA2 790047            clr        echoFlag                       ; Set echoFlag to FALSE
+ 0AA5 180B01006C        movb   #$01, VRefSignFlag             ; Set VRefSignFlag
+ 0AAA 790066            clr    VRefPosPrintFlag               ; Clear VRefPosPrintFlag
+ 0AAD 790065            clr    VRefNegPrintFlag               ; Clear VRefPosPrintFlag AGAIN =)
+ 0AB0 180B010002        movb   #$01, displayState             ; Return Back to Display Hub
+ 0AB5 3D                rts
+ 0AB6           
+ 0AB6           ;============================ Display State 6 - Backspace ======================
+ 0AB6           
+ 0AB6           displaystate6:
+ 0AB6           
+ 0AB6 B60003            ldaa   backspaceState
+ 0AB9 1827000A          lbeq   backspacestate0                ; Backs up Cursor 
+ 0ABD 43                deca
+ 0ABE 1827001A          lbeq   backspacestate1                ; Space Print
+ 0AC2 43                deca
+ 0AC3 18270020          lbeq   backspacestate2                ; Backs up Cursor and Return to Display State 1
+ 0AC7           
+ 0AC7           backspacestate0:
+ 0AC7           
+ 0AC7 730043            dec        digitCounter                   ; Decrement digitCounter
+ 0ACA FE0075            ldx    pointer                        ; Load Index Register X with pointer
+ 0ACD 09                dex                                   ; Decrement Index Register X
+ 0ACE 7E0075            stx        pointer                        ; Store Index Register X into pointer 
+ 0AD1 C608              ldab   #$08                           ; Load Accumulator B with ASCII Value of Backspace
+ 0AD3 160000            jsr        OUTCHAR                        ; Moves the Cursor Back One Space On LCD
+ 0AD6 180B010003        movb   #$01, backspaceState           ; Return to backspaceState 1
+ 0ADB 3D                rts
+ 0ADC                   
+ 0ADC           backspacestate1:
+ 0ADC           
+ 0ADC C620              ldab   #$20                           ; Load Accumulator B with ASCII Value of Space
+ 0ADE 160000            jsr        OUTCHAR                        ; Prints a Space on LCD and Moves the Cursor to Next Address
+ 0AE1 180B020003        movb   #$02, backspaceState           ; Return to backspaceState 2
+ 0AE6 3D                rts
+ 0AE7           
+ 0AE7           backspacestate2:	
+ 0AE7           	
+ 0AE7 C608              ldab   #$08                           ; Load Accumulator B with ASCII Value of Backspace
+ 0AE9 160000            jsr        OUTCHAR                        ; Moves the Cursor Back One Space On LCD
+ 0AEC 180B000003        movb   #$00, backspaceState           ; Return to backspace state 0
+ 0AF1 180B010002        movb   #$01, displayState             ; Return to Display State 1
+ 0AF6 79004A            clr        backspaceFlag                  ; Set backspaceFlag to FALSE
+ 0AF9 790067            clr        backspacePrint                 ; Set backspaceFlag to FALSE
+ 0AFC 3D                rts
+ 0AFD             
+ 0AFD           ;===================== Display State 7 - State Variable Print ==================
+ 0AFD           
+ 0AFD           displaystate7:
+ 0AFD           
+ 0AFD B60004        ldaa   stateVariableState  
+ 0B00 43            deca   
+ 0B01 2711          beq    ON_OFF_PROMPT                  ; Determine State (on/off)
+ 0B03 43            deca
+ 0B04 2720          beq    OPEN_CLOSED_PROMPT             ; Open Loop Display
+ 0B06 43            deca
+ 0B07 2728          beq    AUTO_MANUAL_PROMPT             ; Update LCD Automatically
+ 0B09 180B010004        movb   #$01, stateVariableState       ; Go to ON_OFF_PROMPT on Next Pass Through Display State 7
+ 0B0E 180B010002        movb   #$01, displayState             ; Return to Display HUB On Next Pass Through Display
+ 0B13 3D            rts  
+ 0B14           
+ 0B14           ON_OFF_PROMPT:
+ 0B14           
+ 0B14 F70070        tst    promptUpFlag                   ; Test promptUpFlag
+ 0B17 1826011B          lbne   SKIP_STATE_VARIABLE_PRINT      ; If promptUpFlag is TRUE, Branch to SKIP_STATE_VARIABLE_PRINT
+ 0B1B F7004D        tst    RUN                            ; Test RUN
+ 0B1E 1827003F      lbeq   DISPLAY_STOP_VARIABLE          ; If RUN is TRUE, Branch to DISPLAY_STOP_VARIABLE
+ 0B22 18200016          lbra   DISPLAY_RUN_VARIABLE           ; Otherwise, Branch to DISPLAY_RUN_VARIABLE
+ 0B26           
+ 0B26           OPEN_CLOSED_PROMPT:
+ 0B26           
+ 0B26 F7004E            tst        loopSetFlag                    ; Test loopSetFlag
+ 0B29 18270085          lbeq   DISPLAY_CL_VARIABLE            ; If loopSetFlag is TRUE, Branch to DISPLAY_CL_VARIABLE
+ 0B2D 18200058          lbra   DISPLAY_OL_VARIABLE            ; Otherwise, Branch to DISPLAY_OL_VARIABLE
+ 0B31           
+ 0B31           AUTO_MANUAL_PROMPT:
+ 0B31           
+ 0B31 F70050            tst        autoManualFlag                 ; Test autoManualFlag
+ 0B34 182600A0          lbne   DISPLAY_AUTO_VARIABLE          ; If autoManualFlag is TRUE, Branch to DISPLAY_AUTO_VARIABLE
+ 0B38 182000CB          lbra   DISPLAY_MANUAL_VARIABLE        ; Otherwise, Branch to DISPLAY_MANUAL_VARIABLE
+ 0B3C                   
+ 0B3C           DISPLAY_RUN_VARIABLE:
+ 0B3C           
+ 0B3C 8664          ldaa   #$64                           ; Load Accumulator A with $40
+ 0B3E CE0B4E        ldx    #RUN_VARIABLE_MESSAGE          ; Load Index Register X with Address of F2_INIT_MESSAGE
+ 0B41 160C7F        jsr    DISPLAY_CHAR                       ; Jump to Subroutine DISPLAY_CHAR
+ 0B44 FE0079        ldx    displayPointer                 ; Load Index Register X with value in displayPointer
+ 0B47 E600          ldab   0,x                            ; Load B with the Contents of X
+ 0B49 18270004      lbeq   DONE_RUN_VARIABLE_PRINT        ; If X = $00, Branch to DONE_F2_INIT_PRINT
+ 0B4D 3D            rts
+ 0B4E           
+ 0B4E           RUN_VARIABLE_MESSAGE :
+ 0B4E           
+ 0B4E 52            .ascii 'R'
+ 0B4F 00            .byte  $00               
+ 0B50 3D                rts
+ 0B51           
+ 0B51           DONE_RUN_VARIABLE_PRINT:
+ 0B51            
+ 0B51 180B020004     movb   #$02, stateVariableState       ; Set next Display State 7 to Execute OPEN_CLOSED_PROMPT
+ 0B56 180B010002     movb   #$01, displayState             ; Return to Display State HUB
+ 0B5B 180B010049     movb   #$01, firstChar                ; Clear firstChar
+ 0B60 3D            rts 
+ 0B61                   
+ 0B61           DISPLAY_STOP_VARIABLE:
+ 0B61           
+ 0B61 8664          ldaa   #$64                           ; Load Accumulator A with $40
+ 0B63 CE0B73        ldx    #STOP_VARIABLE_MESSAGE         ; Load Index Register X with Address of F2_INIT_MESSAGE
+ 0B66 160C7F        jsr    DISPLAY_CHAR                       ; Jump to Subroutine DISPLAY_CHAR
+ 0B69 FE0079        ldx    displayPointer                 ; Load Index Register X with value in displayPointer
+ 0B6C E600          ldab   0,x                            ; Load B with the Contents of X
+ 0B6E 18270004      lbeq   DONE_STOP_VARIABLE_PRINT       ; If X = $00, Branch to DONE_F2_INIT_PRINT
+ 0B72 3D            rts
+ 0B73           
+ 0B73           STOP_VARIABLE_MESSAGE:
+ 0B73           
+ 0B73 53            .ascii 'S'
+ 0B74 00            .byte  $00               
+ 0B75 3D                rts
+ 0B76           
+ 0B76           DONE_STOP_VARIABLE_PRINT:
+ 0B76           
+ 0B76 180B020004     movb   #$02, stateVariableState       ; Set next Display State 7 to Execute OPEN_CLOSED_PROMPT
+ 0B7B 180B010002     movb   #$01, displayState             ; Return to Display State HUB
+ 0B80 180B010049     movb   #$01, firstChar                ; Clear firstChar
+ 0B85 7B003E            stab   stateVariable                  ; Store Contents of B into stateVariable
+ 0B88 3D            rts   
+ 0B89                   
+ 0B89           DISPLAY_OL_VARIABLE:
+ 0B89           
+ 0B89 8665          ldaa   #$65                           ; Load Accumulator A with $40
+ 0B8B CE0B9B        ldx    #OL_VARIABLE_MESSAGE           ; Load Index Register X with Address of F2_INIT_MESSAGE
+ 0B8E 160C7F        jsr    DISPLAY_CHAR                       ; Jump to Subroutine DISPLAY_CHAR
+ 0B91 FE0079        ldx    displayPointer                 ; Load Index Register X with value in displayPointer
+ 0B94 E600          ldab   0,x                            ; Load B with the Contents of X
+ 0B96 18270005      lbeq   DONE_OL_VARIABLE_PRINT         ; If X = $00, Branch to DONE_F2_INIT_PRINT
+ 0B9A 3D            rts
+ 0B9B           
+ 0B9B           OL_VARIABLE_MESSAGE:
+ 0B9B           
+ 0B9B 4F4C          .ascii 'OL'
+ 0B9D 00            .byte  $00               
+ 0B9E 3D                rts
+ 0B9F           
+ 0B9F           DONE_OL_VARIABLE_PRINT:
+ 0B9F           
+ 0B9F 180B030004     movb   #$03, stateVariableState       ; Set Next Display State 7 to Execute AUTO_MANUAL_PROMPT
+ 0BA4 180B010002     movb   #$01, displayState             ; Return to Display State HUB
+ 0BA9 180B010049     movb   #$01, firstChar                ; Clear firstChar
+ 0BAE 7B003E            stab   stateVariable                  ; Store Contents of B into stateVariable
+ 0BB1 3D            rts 
+ 0BB2                   
+ 0BB2           DISPLAY_CL_VARIABLE:
+ 0BB2           
+ 0BB2 8665          ldaa   #$65                           ; Load Accumulator A with $40
+ 0BB4 CE0BC4        ldx    #CL_VARIABLE_MESSAGE           ; Load Index Register X with Address of F2_INIT_MESSAGE
+ 0BB7 160C7F        jsr    DISPLAY_CHAR                       ; Jump to Subroutine DISPLAY_CHAR
+ 0BBA FE0079        ldx    displayPointer                 ; Load Index Register X with value in displayPointer
+ 0BBD E600          ldab   0,x                            ; Load B with the Contents of X
+ 0BBF 18270005      lbeq   DONE_CL_VARIABLE_PRINT         ; If X = $00, Branch to DONE_F2_INIT_PRINT
+ 0BC3 3D            rts
+ 0BC4           
+ 0BC4           CL_VARIABLE_MESSAGE :
+ 0BC4           
+ 0BC4 434C          .ascii 'CL'
+ 0BC6 00            .byte  $00               
+ 0BC7 3D                rts
+ 0BC8           
+ 0BC8           
+ 0BC8           DONE_CL_VARIABLE_PRINT:
+ 0BC8           
+ 0BC8 180B030004     movb   #$03, stateVariableState       ; Set Next Display State 7 to Execute AUTO_MANUAL_PROMPT
+ 0BCD 180B010002     movb   #$01, displayState             ; Return to Display State HUB
+ 0BD2 180B010049     movb   #$01, firstChar                ; Clear firstChar
+ 0BD7 3D            rts 
+ 0BD8                   
+ 0BD8           DISPLAY_AUTO_VARIABLE:
+ 0BD8           
+ 0BD8 8667          ldaa   #$67                           ; Load Accumulator A with $40
+ 0BDA CE0BEA        ldx    #AUTO_VARIABLE_MESSAGE         ; Load Index Register X with Address of F2_INIT_MESSAGE
+ 0BDD 160C7F        jsr    DISPLAY_CHAR                       ; Jump to Subroutine DISPLAY_CHAR
+ 0BE0 FE0079        ldx    displayPointer                 ; Load Index Register X with value in displayPointer
+ 0BE3 E600          ldab   0,x                            ; Load B with the Contents of X
+ 0BE5 18270004      lbeq   DONE_AUTO_VARIABLE_PRINT       ; If X = $00, Branch to DONE_F2_INIT_PRINT
+ 0BE9 3D            rts
+ 0BEA           
+ 0BEA           AUTO_VARIABLE_MESSAGE :
+ 0BEA           
+ 0BEA 41            .ascii 'A'
+ 0BEB 00            .byte  $00               
+ 0BEC 3D                rts
+ 0BED           
+ 0BED           
+ 0BED           DONE_AUTO_VARIABLE_PRINT:
+ 0BED           
+ 0BED 180B010004     movb   #$01, stateVariableState       ; Set next Display State 7 to Execute OPEN_CLOSED_PROMPT
+ 0BF2 180B00004F        movb   #$00, stateVariableFlag        ; Clear stateVariableFlag
+ 0BF7 180B010002     movb   #$01, displayState             ; Return to Display State HUB
+ 0BFC 180B010049     movb   #$01, firstChar                ; Set firstChar
+ 0C01 180B000070        movb   #$00, promptUpFlag             ; Clear promptUpFlag
+ 0C06 3D            rts 
+ 0C07                   
+ 0C07           DISPLAY_MANUAL_VARIABLE:
+ 0C07           
+ 0C07 8667          ldaa   #$67                           ; Load Accumulator A with $40
+ 0C09 CE0C19        ldx    #MANUAL_VARIABLE_MESSAGE       ; Load Index Register X with Address of F2_INIT_MESSAGE
+ 0C0C 160C7F        jsr    DISPLAY_CHAR                               ; Jump to Subroutine DISPLAY_CHAR
+ 0C0F FE0079        ldx    displayPointer                 ; Load Index Register X with value in displayPointer
+ 0C12 E600          ldab   0,x                            ; Load B with the Contents of X
+ 0C14 18270004      lbeq   DONE_MANUAL_VARIABLE_PRINT     ; If X = $00, Branch to DONE_F2_INIT_PRINT
+ 0C18 3D            rts
+ 0C19           
+ 0C19           MANUAL_VARIABLE_MESSAGE :
+ 0C19           
+ 0C19 4D            .ascii 'M'
+ 0C1A 00            .byte  $00               
+ 0C1B 3D                rts
+ 0C1C           
+ 0C1C           
+ 0C1C           DONE_MANUAL_VARIABLE_PRINT:
+ 0C1C           
+ 0C1C 180B010004     movb   #$01, stateVariableState       ; Set next Display State 7 to Execute OPEN_CLOSED_PROMP
+ 0C21 180B00004F        movb   #$00, stateVariableFlag        ; Clear stateVariableFlag
+ 0C26 180B010002     movb   #$01, displayState             ; Return to Display State HUB
+ 0C2B 180B010049     movb   #$01, firstChar                ; Set firstChar
+ 0C30 180B000070        movb   #$00, promptUpFlag             ; Clear promptUpFlag
+ 0C35 3D            rts 
+ 0C36           
+ 0C36           SKIP_STATE_VARIABLE_PRINT:
+ 0C36           
+ 0C36 180B010004     movb   #$01, stateVariableState       ; Set next Display State 7 to Execute OPEN_CLOSED_PROMP
+ 0C3B 180B00004F        movb   #$00, stateVariableFlag        ; Clear stateVariableFlag
+ 0C40 180B010002     movb   #$01, displayState             ; Return to Display State HUB
+ 0C45 180B010049     movb   #$01, firstChar                ; Set firstChar
+ 0C4A 3D            rts 
+ 0C4B                   
+ 0C4B           ;===================== Display State 8 -  Update LCD Display ==================
+ 0C4B                   
+ 0C4B           displaystate8:
+ 0C4B            	
+ 0C4B F70050            tst        autoManualFlag                 ; Test autoManualFlag
+ 0C4E 271F              beq    UPDATE_LCD_DONE                ; If autoManualFlag is FALSE, Branch to UPDATE_LCD_DONE
+ 0C50                   
+ 0C50 F70070            tst    promptUpFlag                   ; Test promptUpFlag
+ 0C53 261A          bne    UPDATE_LCD_DONE                ; If promptUpFlag is TRUE, Branch to UPDATE_LCD_DONE 
+ 0C55                   
+ 0C55 180B000051     movb   #$00, LCDUpdateFlag            ; Otherwise, Clear LCDUpdateFlag
+ 0C5A           
+ 0C5A 160000        jsr    UPDATELCDL1                    ; Update the LCD top line
+ 0C5D F7006F        tst    updateLine2Flag                ; See if I want Update LCD Screen Line 2
+ 0C60 270D          beq    UPDATE_LCD_DONE                        ; If updateLine2Flag FALSE, Branch to UPDATE_LCD_DONE
+ 0C62 160000        jsr    UPDATELCDL2                    ; Update the LCD bottom line
+ 0C65 180B01004F        movb   #$01, stateVariableFlag        ; Set stateVariableFlag
+ 0C6A 180B00006F     movb   #$00, updateLine2Flag          ; Clear Update Line 2
+ 0C6F           
+ 0C6F           UPDATE_LCD_DONE:
+ 0C6F 180B010002     movb   #$01, displayState             ; Set next state to: Display HUB
+ 0C74 180B01004F        movb   #$01, stateVariableFlag        ; Set stateVariableFlag
+ 0C79 180B000051     movb   #$00, LCDUpdateFlag            ; Clear LCD flag
+ 0C7E 3D            rts   
+ 0C7F                      
+ 0C7F           ;=========  Display - Miscellaneous Sub-Rountines / Branches   =================
+ 0C7F           
+ 0C7F           DISPLAY_CHAR:
+ 0C7F           
+ 0C7F F70049        tst    firstChar                      ; Test firstChar to Raise Flags
+ 0C82 270A          beq    DISPLAY_WRITE                  ; Branch to DISPLAY_WRITE if firstChar = 0 (FALSE)
+ 0C84 7E0079        stx    displayPointer                 ; Store value of x into displayPointer
+ 0C87 160000            jsr    SETADDR                        ; Set cursor to particular LCD address in A
+ 0C8A 790049        clr    firstChar                      ; Clear firstChar
+ 0C8D 3D            rts
+ 0C8E           
+ 0C8E           DISPLAY_WRITE:
+ 0C8E           
+ 0C8E FE0079        ldx    displayPointer                 ; Load x with value in Display Pointer
+ 0C91 08            inx                                   ; Increment x
+ 0C92 7E0079        stx    displayPointer                 ; Store Display Pointer with incremented x
+ 0C95 160000        jsr    OUTCHAR                        ; Print character
+ 0C98 3D            rts
+ 0C99                   
+ 0C99           ;========================= Timer Channel 0 Sub-Routine =========================
+ 0C99                   
+ 0C99           TIMER_C0:
+ 0C99           	
+ 0C99 B60005            ldaa   tc0State                       ; Load Accumulator A with tc0State
+ 0C9C 2704              beq    tc0state0                      ; Branch to Timer Channel 0 State 0
+ 0C9E 43                deca                                  ; Decrement Accumulator A
+ 0C9F 2733              beq    tc0state1                      ; Branch to Timer Channel 0 State 1
+ 0CA1 3D                rts
+ 0CA2                   
+ 0CA2           ;================ Timer Channel 0 State 0 - Timer Initialization ===============
+ 0CA2           
+ 0CA2           tc0state0:
+ 0CA2           	
+ 0CA2 1C002810          bset   PORTJ, $10                     ; initialize to off
+ 0CA6 1C002910      bset   DDRJ, $10                      ; set PORTJ to output
+ 0CAA 1C008001          bset   TIOS, #$01                     ; Setting TC0 for Output Compare
+ 0CAE 1C008901          bset   TCTL2, #$01                    ; Initialize OC0 to Toggle on Successful Compare   
+ 0CB2 1D008902          bclr   TCTL2, #$02                    ; Initialize OC0 to Toggle on Successful Compare
+ 0CB6 1C008E01          bset   TFLG1, #$0001                  ; Clearing the Timer Output Compare Flage if Set 
+ 0CBA 1C008C01      bset   TMSK1, #$01                            ; Enabling Timer Channel 0 Output Compare Interrupt
+ 0CBE 180B010005        movb   #$01, tc0State                 ; Set Next Interrupt State to 1
+ 0CC3 180BA00086        movb   #$A0, TSCR                     ; Enable the Timer and Stopping While in BGND Mode
+ 0CC8 10EF              cli                                   ; Enable Maskable Interrupts
+ 0CCA FC0084            ldd    TCNT                           ; Reads Current Count and Stores it in D
+ 0CCD C33E80            addd   #$3E80                         ; Adds Interval Value 800 to Current Timer Count
+ 0CD0 7C0090            std    TC0H                                                   ; Stores Interval + TCNT  
+ 0CD3 3D                rts                                   ; Return from Subroutine
+ 0CD4                   
+ 0CD4           ;================== Timer Channel 0 State 1 - Arbitrary State ==================
+ 0CD4           
+ 0CD4           tc0state1:
+ 0CD4           
+ 0CD4 3D                rts                                   ; Return from Subroutine
+ 0CD5                   
+ 0CD5           ;==================== Interrupt Service Routine & Branches =====================
+ 0CD5           
+ 0CD5           TC0_ISR:
+ 0CD5              
+ 0CD5 FC0006        ldd    V_Ref                          ; Load D with V_Ref
+ 0CD8 F7004E        tst    loopSetFlag                    ; Test loopSetFlag
+ 0CDB 2607          bne    OPEN_LOOP_START                ; If Open Loop Desired, Branch to OPEN_LOOP_INIT
+ 0CDD B30008        subd   V_Act                          ; Subtract VACT from VREF
+ 0CE0 2B0F              bmi    SET_ERROR_NEW_NEG              ; If the N flag was set Branch to SET_ERROR_NEW_NEG
+ 0CE2 2012              bra    SKIPtoOPEN_LOOP                ; Otherwise, Branch to SKIPtoOPEN_LOOP
+ 0CE4                           
+ 0CE4           OPEN_LOOP_START:
+ 0CE4           
+ 0CE4 B30008            subd   V_Act                          ; Subtract V_act from V_Ref
+ 0CE7 7C002C            STD    SS_ERROR
+ 0CEA FC0006            ldd    V_Ref
+ 0CED 2B02              bmi    SET_ERROR_NEW_NEG              ; If the N flag was set Branch to SET_ERROR_NEW_NEG
+ 0CEF 2005              bra    SKIPtoOPEN_LOOP                ; Otherwise, Branch to SKIPtoOPEN_LOOP
+ 0CF1                   
+ 0CF1           SET_ERROR_NEW_NEG:
+ 0CF1           
+ 0CF1 180B010074     movb   #$01, errorSign                ; Set errorSign if V_Ref-V_act Resulted in a Negative #
+ 0CF6           
+ 0CF6           SKIPtoOPEN_LOOP:   
+ 0CF6           
+ 0CF6 7C000A        std    Error                          ; Store into ERROR_NEW
+ 0CF9 F3000C        addd   E_Sum                          ; Add ERROR_SUM to ERROR_NEW
+ 0CFC 280D          bvc    VALID_ESUM                     ; Exit if no overflow from ERROR_SUM+ERROR_NEW
+ 0CFE F7000C        tst    E_Sum                          ; If overflow, determine sign of ERROR_SUM and
+ 0D01 2B05          bmi    NEG_ESUM                       ; saturate accordingly.
+ 0D03 CC7FFF        ldd    #$7FFF                         ; Load D with maximum positive value: 32,767
+ 0D06 2003          bra    VALID_ESUM                     ; Branch now that ESUM is valid
+ 0D08           
+ 0D08           NEG_ESUM:
+ 0D08           
+ 0D08 CC1F40        ldd    #8000                          ; Load D with maximum negative value: -32,768
+ 0D0B           
+ 0D0B           VALID_ESUM:                               ; Calculation for KI*ERROR_SUM	
+ 0D0B           
+ 0D0B 7C000C        std    E_Sum                          ; Store value in D into ERROR_SUM
+ 0D0E F7004D        tst    RUN                            ; Test RUN
+ 0D11 2609          bne    KEEP_ERROR_SUM                 ; If RUN = TRUE, keep current ERROR_SUM
+ 0D13 18030000000C     movw   #$0000, E_Sum                  ; If RUN = FALSE, set ERROR_SUM to $0000
+ 0D19 FC000C        ldd    E_Sum                          ; Load D with ERROR_SUM
+ 0D1C               
+ 0D1C           KEEP_ERROR_SUM:
+ 0D1C           
+ 0D1C FD0014        ldy    Ki                             ; Load Y with KI
+ 0D1F 1813          emuls                                 ; (D)x(Y) ==> Y:D
+ 0D21 CE0400        ldx    #$400                          ; Load X with value of 1024
+ 0D24 1814          edivs                                 ; (Y:D)/X ==> Result into Y, Remainder ==> D
+ 0D26 7D001C            sty    Kidivs                             ; Store Result in Y into Kidivs
+ 0D29             
+ 0D29           ; Calculation for KP*ERROR_NEW     
+ 0D29              
+ 0D29 FC000A        ldd    Error                          ; Load D with ERROR_NEW
+ 0D2C FD0018        ldy    Kp                             ; Load Y with KP
+ 0D2F 1813          emuls                                 ; (D)x(Y) ==> Y:D
+ 0D31 CE0400        ldx    #$400                          ; Load X with value of 1024
+ 0D34 1814          edivs                                 ; (Y:D)/X ==> Result into Y, Remainder ==> D     
+ 0D36 7D001A        sty    Kpdivs                         ; Store result into KPE                     
+ 0D39 FC001A        ldd    Kpdivs                         ; Load D with KPE
+ 0D3C F70014        tst    Ki                             ; Test Ki
+ 0D3F 2703          beq    NO_KIDIVS                      ; If Ki is zero, Get Rid of the K Division
+ 0D41 F3001C        addd   Kidivs                         ; Add KPE to KIE
+ 0D44           
+ 0D44           NO_KIDIVS:
+ 0D44           
+ 0D44 C30000        addd   #$0000                         ; In the KI=0 case, need to add to set V flag    
+ 0D47 280D          bvc    VALID_a                        ; Exit if no overflow from KPE+KIE
+ 0D49 F7001C        tst    Kidivs                         ; If overflow, determine sign of KIE and
+ 0D4C 2B05          bmi    NEG_a                          ; saturate accordingly.
+ 0D4E CC7FFF        ldd    #$7FFF                         ; Load D with maximum positive value: 32,767
+ 0D51 2003          bra    VALID_a                        ; Branch now that "a" is valid
+ 0D53           NEG_a:
+ 0D53           
+ 0D53 CC8000        ldd    #$8000                         ; Load D with maximum negative value: -32,768    
+ 0D56            
+ 0D56           VALID_a:
+ 0D56           
+ 0D56 7C0010        std    A_Prime                        ; Store Contents of D into A_Prime
+ 0D59 F7004D        tst    RUN                            ; Test Run
+ 0D5C 2721          beq    MOTOR_STOP                     ; If RUN=0, branch to MOTOR_STOP  
+ 0D5E C3099A        addd   #$099A                         ; Add 2458 for 6 Volt offset     
+ 0D61 280D          bvc    VALID_a_prime                  ; Branch now that "a prime" is valid
+ 0D63 F70010        tst    A_Prime                        ; Test A_Prime
+ 0D66 2B05          bmi    NEG_a_prime                    ; If A_Prime Negative, Branch to NEG_a_prime
+ 0D68 CC7FFF        ldd    #$7FFF                         ; Load D with maximum positive value: 32,767
+ 0D6B 2003          bra    VALID_a_prime                  ; Branch now that "a prime" is valid
+ 0D6D                   
+ 0D6D           NEG_a_prime:
+ 0D6D           
+ 0D6D CC1F40        ldd    #8000                          ; Load D with maximum negative value: -32,768
+ 0D70             
+ 0D70           VALID_a_prime:	
+ 0D70                
+ 0D70 8C0D9A        cpd    #$0D9A                         ; Compare D to 3482
+ 0D73 2A12          bpl    VDAC8.5                        ; If greater than, branch to VDAC8.5
+ 0D75 8C059A        cpd    #$59A                          ; Compare D to 1434
+ 0D78 2B15          bmi    VDAC3.5                        ; If less than, branch to VDAC3.5
+ 0D7A 7C001E        std    Dac_Value                      ; Store D into VALUE
+ 0D7D 2018          bra    exit_PI_CONTROL   
+ 0D7F           
+ 0D7F           MOTOR_STOP:
+ 0D7F           
+ 0D7F 1803099A001E     movw   #$99A, Dac_Value               ; 6.0V (2458)
+ 0D85 2010          bra    exit_PI_CONTROL                ; Branch to exit_PI_CONTROL
+ 0D87                   
+ 0D87           VDAC8.5:
+ 0D87           
+ 0D87 18030D9A001E     movw   #$D9A, Dac_Value               ; 8.5V (3482) 
+ 0D8D 2008          bra    exit_PI_CONTROL                ; Branch to exit_PI_CONTROL
+ 0D8F                   
+ 0D8F           VDAC3.5:	  
+ 0D8F            
+ 0D8F 1803059A001E     movw   #$59A, Dac_Value               ; 3.5V (1434)      
+ 0D95 2000          bra    exit_PI_CONTROL                ; Branch to exit_PI_CONTROL
+ 0D97           
+ 0D97           exit_PI_CONTROL:
+ 0D97           
+ 0D97 160D9C        jsr    EFFORT_CALC                    ; Calcualte Effort Of Motor
+ 0D9A 2062          bra    ENCODER_READ                   ; Branch to ENCODER_READ
+ 0D9C           
+ 0D9C           EFFORT_CALC:
+ 0D9C           
+ 0D9C           
+ 0D9C FC001E        ldd    Dac_Value
+ 0D9F 8C099A            cpd    #$099A
+ 0DA2 2518              blo    EFFORT_NEGATIVE
+ 0DA4 83099A            subd   #$099A
+ 0DA7 7C003F            std        Dac_ValueMinusSixVolts
+ 0DAA CD0064            ldy        #$0064
+ 0DAD 1813              emuls
+ 0DAF 7C0041            std        Dac_ValueTimesHundred
+ 0DB2 FC0041            ldd        Dac_ValueTimesHundred
+ 0DB5 CE0400            ldx        #$0400
+ 0DB8 1815              idivs
+ 0DBA 201B              bra        EFFORT_POS
+ 0DBC                      
+ 0DBC           EFFORT_NEGATIVE:
+ 0DBC           
+ 0DBC CC099A        ldd    #$099A
+ 0DBF B3001E            subd   Dac_Value
+ 0DC2 7C003F            std        Dac_ValueMinusSixVolts
+ 0DC5 CD0064            ldy        #$0064
+ 0DC8 1813              emuls
+ 0DCA 7C0041            std        Dac_ValueTimesHundred
+ 0DCD FC0041            ldd        Dac_ValueTimesHundred
+ 0DD0 CE0400            ldx        #$0400
+ 0DD3 1815              idivs
+ 0DD5 2017              bra    EFFORT_NEG          
+ 0DD7           
+ 0DD7           EFFORT_POS:
+ 0DD7           
+ 0DD7 CD0BBE        ldy    #EFFORT_BUF
+ 0DDA 1808402B          movb   #'+',0,Y                           ; Move '-' into the First Buffer Address
+ 0DDE 8E0064        cpx    #$0064
+ 0DE1 2204              bhi        EFFORT_SAT
+ 0DE3 7E0024            stx        Effort
+ 0DE6 3D                rts
+ 0DE7                   
+ 0DE7           EFFORT_SAT:
+ 0DE7           	
+ 0DE7 180300640024      movw   #$0064, Effort
+ 0DED 3D                rts
+ 0DEE                   
+ 0DEE           EFFORT_NEG:
+ 0DEE           
+ 0DEE CD0BBE        ldy    #EFFORT_BUF
+ 0DF1 1808402D          movb   #'-',0,Y                           ; Move '-' into the First Buffer Address        
+ 0DF5 8E0064        cpx    #$0064
+ 0DF8 22ED              bhi        EFFORT_SAT
+ 0DFA 7E0024            stx        Effort
+ 0DFD 3D                rts     
+ 0DFE           
+ 0DFE           ENCODER_READ:
+ 0DFE           	   
+ 0DFE FC0280            ldd    ENCODER                        ; Load D with current ENCODER value (THETA_NEW)
+ 0E01 7C0020        std    Theta_New                      ; Store Encoder Value in Theta_New
+ 0E04 B30022        subd   Theta_Old                      ; Subtract THETA_OLD from D
+ 0E07 2B02              bmi    SET_VACT_NEG                   ; If Subtraction is Negative, Branch to SET_VACT_NEG
+ 0E09 2005              bra    SKIP_NEGATING_VACT             ; Otherwise, Branch to SKIP_NEGATING_VACT
+ 0E0B           
+ 0E0B           SET_VACT_NEG:
+ 0E0B           
+ 0E0B 180B010072     movb   #$01, VActSign                 ; Set the VActSign to TRUE
+ 0E10           
+ 0E10           SKIP_NEGATING_VACT:	
+ 0E10              	
+ 0E10 7C0008        std    V_Act                          ; Store Contents of D into V_act
+ 0E13 180400200022     movw   Theta_New,Theta_Old            ; Move Current Theta_Value into Theta_Old
+ 0E19 180B010053     movb   #$01, VActFlag                 ; Set VActFlag
+ 0E1E 180B010055     movb   #$01, errorFlag                ; Set errorFlag
+ 0E23 180B010054     movb   #$01, effortFlag               ; Set effortFlag
+ 0E28 180B01006D        movb   #$01, updateValuesFlag         ; Set updateValuesFlag
+ 0E2D            
+ 0E2D           OUTDAC:
+ 0E2D           
+ 0E2D FC001E       ldd     Dac_Value                      ; Load Accumulator D With VALUE
+ 0E30 7A0301       staa    $0301                          ; Store Address of DACs MSB in A
+ 0E33 7B0300       stab    $0300                          ; Store Address of DACs LSB in B
+ 0E36 1D002810     bclr    PORTJ, pin5                    ; Clear pin 5 in Port J
+ 0E3A 1C002810     bset    PORTJ, pin5                    ; Set pin 5 in Port J
+ 0E3E           
+ 0E3E           SCOPE_CALC:
+ 0E3E              
+ 0E3E FC0008       LDD     V_Act
+ 0E41 CD000D       LDY     #$0D
+ 0E44 1813         EMULS
+ 0E46 C30800       ADDD    #$800
+ 0E49 7C002A       STD     DAC_PLUS_FIVE
+ 0E4C 2000         BRA     CHANB_OUTDAC
+ 0E4E              
+ 0E4E           CHANB_OUTDAC:
+ 0E4E           
+ 0E4E FC002A       LDD     DAC_PLUS_FIVE                  ; Load Accumulator D With VALUE
+ 0E51 7A0303       STAA    $0303                          ; Store Address of DACs MSB in B
+ 0E54 7B0302       STAB    $0302                          ; Store Address of DACs LSB in B
+ 0E57 1D002810     BCLR    PORTJ, pin5                    ; Clear pin 5 in Port J
+ 0E5B 1C002810     BSET    PORTJ, pin5                    ; Set pin 5 in Port J
+ 0E5F              
+ 0E5F           FINAL_ISR_CHECK:
+ 0E5F           
+ 0E5F F7004E            tst    loopSetFlag
+ 0E62 2602              bne    SET_SS_ERROR
+ 0E64 2006              bra    LCD_COUNTER_CHECK
+ 0E66           
+ 0E66           SET_SS_ERROR:
+ 0E66           
+ 0E66 1804002C000A     movw   SS_ERROR, Error
+ 0E6C                   
+ 0E6C           LCD_COUNTER_CHECK:
+ 0E6C           	
+ 0E6C F70045        tst    LCDUpdateCounter               ; Test LCDUpdateCounter
+ 0E6F 260A              bne        NOT_YET                        ; If LCDUpdateCounter is TRUE, Branch to LCDUpdateCounter
+ 0E71 730045            dec        LCDUpdateCounter               ; Otherwise Branch to LCDUpdateCounter
+ 0E74 180B010051        movb   #$01, LCDUpdateFlag            ; Set LCDUpdateFlag
+ 0E79 2005              bra        ISR_DONE                       ; Branch to ISR_DONE
+ 0E7B           
+ 0E7B           NOT_YET:
+ 0E7B               
+ 0E7B 730045            dec        LCDUpdateCounter               ; Decrement LCDUpdateCounter
+ 0E7E 2000              bra        ISR_DONE                       ; Branch to ISR_DONE
+ 0E80                   
+ 0E80           ISR_DONE:
+ 0E80            
+ 0E80 FC0090            ldd        TC0H                                       ; Grab the Timer Count Corresponding to ISR
+ 0E83 C33E80            addd   #$3E80                                     ; Add the Interval to The Current Timer Count
+ 0E86 7C0090            std        TC0H                                       ; Store the New Timer Count Into the TC0 CR
+ 0E89 B6008E            ldaa   TFLG1                          ; LOAD TIMER FLAG ONTO ACC. A
+ 0E8C 8A01              oraa   #01                            ; CLEAR CONTENTS (TIMER FLAG) OF ACC. A
+ 0E8E 7A008E            staa   TFLG1                          ; LOAD ACC. A BACK INTO TIMER FLAG
+ 0E91 0B                rti
+ 0E92             
+ 0E92           ;===============================================================================
+ 0E92           
+                .area interrupt_vectors (abs)
+                
+                        .org   $FFEE                          ; Address of Next Interrupt        
+ FFEE 0CD5              .word  TC0_ISR                        ; Load Interrupt Address
+                        .org    $FFFE                         ; At Reset Vector Location
+ FFFE 0000              .word   __start                       ; Load Starting Address
+ 10000           
+ 10000           
+ 10000           
+ 10000           
+ 10000              
+ 10000               
+ 10000              

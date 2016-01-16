@@ -1,0 +1,91 @@
+WARNING: EXTCODE CODE AREA DO NOT CONTAIN RELOCATED ADDRESSES.
+THIS WILL BE REMEDIED IN A LATER RELEASE.
+--- 0000           ;reading a sequence of digits from the keypad and store them in buffer
+--- 0000           ;Contants
+ 000A           ENT_KEY =$000A
+--- 0000           
+--- 0000           ; RAM area
+                .area bss 
+                
+ 0800            COUNT::      .blkb 1
+ 0801            POINTER::    .blkb 2
+ 0803            BUFFER::     .blkb 6
+ 0809            RESULT::     .blkb 2
+ 080B            
+ 080B             
+ 080B            ;code area
+ 080B            ;==============================================================================
+                .area text
+                
+                ;Main Program
+                
+ C055            _main::   
+ C055  16FE5C               jsr  INITKEY                       ;Library command to initialize the keypad
+ C058  16FE71               jsr  FLUSH_BFR                     ;Library Command to flush the buffer
+ C05B  16C061               jsr  BUFFER_STR                    ;Storing numbers into buffer
+ C05E  16C08A               jsr  ASCII_BCD                     ;Convert ASCII to BCD
+ C061            ;end main       
+ C061            ;========================================================================
+ C061            BUFFER_STR:
+ C061  00                           bgnd
+ C062  180B000800                   movb #$00, COUNT                ;Sets COUNT=6
+ C067  180300000809                 movw #$00, RESULT               ;Sets RESULT=0
+ C06D  180308030801                 movw #BUFFER, POINTER           ;Stores BUFFER address into POINTER
+ C073            	  LOOP:
+ C073  16FE77                       jsr GETCHAR                     ;Wait for button on keypad has been pressed
+ C076  00                           bgnd
+ C077  C10A                         cmpb #ENT_KEY                   ;Check if enter key has been pressed
+ C079  270E                     beq  RETURN                     ;If return key entered branch out
+ C07B  FE0801                   ldx  POINTER                    ;Load index register "X" with Pointer address
+ C07E  6B00                     stab 0,x                        ;Stores the contents of B into X
+ C080  720800                   inc  COUNT                      ;Increment the digit count
+ C083  08                       inx                             ;increment X
+ C084  7E0801                   stx  POINTER                    ;Store X into pointer
+ C087  20EA                     bra  LOOP                       ;Branch Back to loop
+ C089                           
+ C089                    
+ C089            ;END BUFFER_STR
+ C089            ;===========================================================================
+ C089            RETURN:
+ C089  3D              rts
+ C08A            ;END RETURN
+ C08A            ;============================================================================
+ C08A            ASCII_BCD:
+ C08A  180308030801                movw #BUFFER, POINTER
+ C090  00                          bgnd
+ C091                LOOP2:
+ C091  00                          bgnd
+ C092  CD000A                      ldy #$000A                        ;Load index register Y with 10
+ C095  FC0809                      ldd RESULT                        ;Load accumualtor D with Result
+ C098  13                          EMUL                              ;Y*D = Y:D
+ C099  8D0000                      CPY #$0000                        ;compare y to zero, to check for overflow
+ C09C  261C                        bne TOOBIG                        ;If too big, not a valid number
+ C09E  7C0809                      std RESULT                        ;Store contents of D in Result
+ C0A1  FE0801                      ldx POINTER                       ;Load index register X with Result
+ C0A4  E600                        ldab 0,x                          ;Loads Accumulator B with contents of X
+ C0A6  C030                        subb #$30                         ;subtract 30 from the contents of B
+ C0A8  87                          clra                              ;Clear accumulator A, clearing the first two bits in accumulator D
+ C0A9  F30809                      addd RESULT                       ;Add the contents of D with the argment of Result and store back in D
+ C0AC  7C0809                      std RESULT                        ;Store the contents of D into Result
+ C0AF  730800                      dec COUNT                         ;Decrement the Digit Count
+ C0B2  2708                        beq EXIT_CONV                     ;If Count=0, Get OUT!
+ C0B4  08                          inx                             ;Increment X, incremting the BUFFER address to be read from POINTER
+ C0B5  7E0801                      stx POINTER                       ;Store X back into pointer
+ C0B8  26D7                        bne LOOP2                         ;Loop back
+ C0BA                    
+ C0BA                     
+ C0BA            ;end ASCII_BCD 
+ C0BA            
+ C0BA            TOOBIG:
+ C0BA  20FE                 bra TOOBIG      
+ C0BC            ;end TOOBIG
+ C0BC            
+ C0BC            EXIT_CONV:
+ C0BC  20FE                 bra EXIT_CONV   
+ C0BE            ;end EXIT_CONV
+ C0BE            
+ C0BE            
+ C0BE            
+                .area interrupt_vectors (abs)
+                .org    $FFFE             ; At reset vector location
+ FFFE  C000      .word   __start           ; Load starting address                                                                                               

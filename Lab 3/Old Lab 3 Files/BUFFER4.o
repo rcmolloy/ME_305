@@ -1,0 +1,76 @@
+XH
+H 3 areas 9 global symbols
+M BUFFER4.s
+S INITKEY Ref0000
+S FLUSH_BFR Ref0000
+S __start Ref0000
+S GETCHAR Ref0000
+A text size 69 flags 0
+dbfile BUFFER4.s
+dbfunc 0 ? 0 I
+dbline 15 0
+dbline 16 3
+dbline 17 6
+dbline 18 9
+dbline 1C C
+dbline 1D D
+dbline 1E 12
+dbline 1F 18
+dbline 21 1E
+dbline 22 21
+dbline 23 22
+dbline 24 24
+dbline 25 26
+dbline 26 29
+dbline 27 2B
+dbline 28 2E
+dbline 29 2F
+dbline 2A 32
+dbline 30 34
+dbline 34 35
+dbline 35 3B
+dbline 37 3C
+dbline 38 3D
+dbline 39 40
+dbline 3A 43
+dbline 3B 44
+dbline 3C 47
+dbline 3D 49
+dbline 3E 4C
+dbline 3F 4F
+dbline 40 51
+dbline 41 53
+dbline 42 54
+dbline 43 57
+dbline 44 5A
+dbline 45 5D
+dbline 46 5F
+dbline 47 60
+dbline 48 63
+dbline 4E 65
+dbline 52 67
+S _main Def0000
+A bss size B flags 0
+S POINTER Def0001
+S COUNT Def0000
+S BUFFER Def0003
+S RESULT Def0009
+A interrupt_vectors size 10000 flags C
+T 00 00 16 00 00 16 00 00 16 00 0C 16
+R 00 00 00 00 02 03 00 00 02 06 00 01 00 09 00 00
+T 00 0A 00 35 00 18 0B 00 00 00 18 03 00 00 00 09
+R 00 00 00 00 00 02 00 00 00 08 00 01 00 0E 00 01
+T 00 18 18 03 00 03 00 01 16 00 00 00 C1 0A 27 0E
+R 00 00 00 00 00 04 00 01 00 06 00 01 02 09 00 03
+T 00 26 FE 00 01 6B 00 72 00 00 08 7E 00 01 20 EA
+R 00 00 00 00 00 03 00 01 00 08 00 01 00 0C 00 01
+T 00 34 3D 18 03 00 03 00 01 00 00 CD 00 0A FC
+R 00 00 00 00 00 05 00 01 00 07 00 01
+T 00 41 00 09 13 8D 00 00 26 1C 7C 00 09 FE 00 01
+R 00 00 00 00 00 02 00 01 00 0B 00 01 00 0E 00 01
+T 00 4F E6 00 C0 30 87 F3 00 09 7C 00 09 73 00 00
+R 00 00 00 00 00 08 00 01 00 0B 00 01 00 0E 00 01
+T 00 5D 27 08 08 7E 00 01 26 D7 20 FE 20 FE
+R 00 00 00 00 00 06 00 01
+T FF FE 00 00
+R 00 00 00 02 02 02 00 02
