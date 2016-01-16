@@ -6,7 +6,7 @@
 
 ENCODER		       		= $0280				; Encoder Address 
 PORTJ              		= $0028             ; Port J Address
-DDRJ	   		   		= $0029             ; Make Port J an Output Address
+DDRJ	   		   	= $0029             ; Make Port J an Output Address
 pin5           	   		= 0b00010000        ; Pin 5 of Port J
 TIOS               		= $0080             ; Timer Output Compare Address
 TFLG1              		= $008E             ; Timer Flag Register Address
@@ -15,24 +15,24 @@ TC0H               		= $0090             ; Timer Channel Zero High Address
 TCNT               		= $0084             ; Timer Count Register High and Low Address
 TMSK1              		= $008C             ; Timer Mask Address
 TCTL2              		= $0089             ; Timer Control Register Address
-VREF_BUF		   		= $BB2			    ; Buffer Address for Reference Velocity
-VACT_BUF		   		= $BB6			    ; Buffer Address for Actual Velocity
-ERROR_BUF		   		= $BBA			    ; Buffer Address for Calculated Error
-EFFORT_BUF		   		= $BBE				; Buffer Address for Calculated Effort
-KI_BUF		   	   		= $BC2              ; Buffer Address for Integral Constant
-KP_BUF		   	   		= $BC7			 	; Buffer Address for Proportional Constant
+VREF_BUF		   	= $BB2			    ; Buffer Address for Reference Velocity
+VACT_BUF		   	= $BB6			    ; Buffer Address for Actual Velocity
+ERROR_BUF		   	= $BBA			    ; Buffer Address for Calculated Error
+EFFORT_BUF		   	= $BBE				; Buffer Address for Calculated Effort
+KI_BUF		   	   	= $BC2              ; Buffer Address for Integral Constant
+KP_BUF		   	   	= $BC7			 	; Buffer Address for Proportional Constant
 
 ;==================== RAM area ====================
 .area bss
 
 ; Task Variables
 
-mmState::				.blkb 1				; Master Mind State Variable
-kpdState::				.blkb 1    			; Key Pad Driver State Variable
+mmState::			.blkb 1				; Master Mind State Variable
+kpdState::			.blkb 1    			; Key Pad Driver State Variable
 displayState::			.blkb 1   			; Display State Variable
 backspaceState::		.blkb 1				; Backspace State Variable
-stateVariableState::	.blkb 1				; State Variable State Variable
-tc0State::				.blkb 1				; Timer Channel Zero State Variable
+stateVariableState::		.blkb 1				; State Variable State Variable
+tc0State::			.blkb 1				; Timer Channel Zero State Variable
 
 ; ISR Variables
 
